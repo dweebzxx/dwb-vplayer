@@ -1,0 +1,35 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode user state
+xcuserdata/
+*.xcuserstate
+*.xcbkptlist
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+
+# Local build output and caches
+build/
+DerivedData/
+.tmp/
+dist/
+*.o
+*.d
+
+# Logs and local-only notes
+logs/
+*.log
+*.xcresult/
+
+# Dependency manager output
+dwb/Pods/
+dwb/*.xcworkspace
+!dwb/dwb.xcodeproj/project.xcworkspace/
+!dwb/dwb.xcodeproj/project.xcworkspace/contents.xcworkspacedata
+!dwb/dwb.xcodeproj/project.xcworkspace/xcshareddata/
+!dwb/dwb.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+!dwb/dwb.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
