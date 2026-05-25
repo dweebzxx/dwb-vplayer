@@ -107,7 +107,7 @@ Create a local ZIP package, checksum, manifest, and draft release notes:
 ./scripts/package-release.sh
 ```
 
-Release packaging artifacts are written under `dist/release/`. The ZIP workflow verifies the built app and extracted app locally, but it does not publish a GitHub Release, upload assets, notarize, staple, tag, or commit anything.
+Release packaging artifacts are written under a versioned folder such as `dist/release/dwb-vplayer-4.1.2/`. The ZIP workflow verifies the built app and extracted app locally, but it does not publish a GitHub Release, upload assets, notarize, staple, tag, or commit anything.
 
 If `project.yml` changes and you need to regenerate the Xcode project:
 

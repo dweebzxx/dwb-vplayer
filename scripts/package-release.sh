@@ -5,7 +5,8 @@ script_dir="${0:A:h}"
 root_dir="${script_dir:h}"
 
 app_path="$root_dir/dist/dwb.app"
-output_dir="$root_dir/dist/release"
+release_root="$root_dir/dist/release"
+output_dir=""
 version="4.1.2"
 build="412"
 skip_build=0
@@ -16,7 +17,7 @@ Usage: scripts/package-release.sh [options]
 
 Options:
   --app <path>          App bundle to package. Default: dist/dwb.app
-  --output-dir <path>   Release artifact directory. Default: dist/release
+  --output-dir <path>   Release artifact directory. Default: dist/release/dwb-vplayer-<version>
   --version <version>   Expected app/release version. Default: 4.1.2
   --build <build>       Expected bundle build number. Default: 412
   --skip-build          Package the existing app after verification
@@ -139,8 +140,11 @@ require_tool sort
 require_tool python3
 
 app_path="${app_path:A}"
-output_dir="${output_dir:A}"
 artifact_base="dwb-vplayer-${version}"
+if [[ -z "$output_dir" ]]; then
+    output_dir="$release_root/$artifact_base"
+fi
+output_dir="${output_dir:A}"
 zip_name="${artifact_base}-macos.zip"
 sha_name="${zip_name}.sha256"
 notes_name="${artifact_base}-release-notes.md"
@@ -243,16 +247,19 @@ This is a local draft release note for the dwb video player ${version} macOS ZIP
 ## Highlights
 
 - Native AppKit local media playback for macOS 13 and newer.
-- VLCKit-backed video playback with support for common local formats.
+- VLCKit-backed video playback with support for common local video formats: mp4, m4v, mov, avi, flv, f4v, wmv, asf, mkv, ts, mts, m2ts, m2t, mpg, 3gp, 3g2, vob, ogv, and ogm.
+- Still-image and animated GIF playback for jpg/jpeg, jfif, png, gif, tiff/tif, bmp, heic, heif, and webp.
 - Queue Page, quick queueing, shuffle/endless shuffle, repeat one, and multi-window playback.
 - Four Window Grid layout, bottom rail controls, Settings, and local file workflow controls.
+- One-click x_ prefix rename and custom-prefix rename work for videos, images, and GIFs.
 
 ## Feature Groups
 
 - Playback: local video playback, image/GIF viewing, seek controls, volume, fullscreen, scaling, repeat, and shuffle modes.
-- Queue: sortable Queue Page, multi-select removal, drag ordering, total duration, Reveal in Finder, and rename actions.
+- Queue: sortable Queue Page, multi-select removal, drag ordering, total duration, Reveal in Finder, x_ prefix rename, and custom-prefix rename.
 - Windows: independent player windows, per-window playback state, opacity, on-top mode, titlebar behavior, and four-window arrangement.
 - Settings: playback, controls, queue/file behavior, titlebar, rail, opacity, and developer/debug options.
+- Unsupported: this release does not claim .ogg support.
 
 ## Signing And Notarization Status
 
@@ -296,6 +303,18 @@ cat > "$manifest_path" <<EOF
   "artifact_path": $(json_string "$zip_path"),
   "artifact_size_bytes": $artifact_size_bytes,
   "sha256": $(json_string "$sha256"),
+  "supported_video_extensions": [
+    "mp4", "m4v", "mov", "avi", "flv", "f4v", "wmv", "asf", "mkv",
+    "ts", "mts", "m2ts", "m2t", "mpg", "3gp", "3g2", "vob", "ogv", "ogm"
+  ],
+  "supported_image_extensions": [
+    "jpg", "jpeg", "jfif", "png", "gif", "tiff", "tif", "bmp", "heic", "heif", "webp"
+  ],
+  "rename_features": [
+    "x_ prefix rename for videos, images, and GIFs",
+    "custom-prefix rename for videos, images, and GIFs"
+  ],
+  "ogg_support_claimed": false,
   "created_utc": $(json_string "$created_utc"),
   "signing_status": $(json_string "$signing_status"),
   "notarization_status": $(json_string "$notarization_status"),
