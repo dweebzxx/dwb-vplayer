@@ -1,0 +1,137 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Pass Metadata",
+  "description": "Machine-readable record for one AI assistant pass",
+  "type": "object",
+  "required": [
+    "pass_id", "pass_name", "date", "model", "status",
+    "agent_md_present", "schema_present", "gitignore_correct",
+    "build_result", "files_read", "files_created", "files_modified",
+    "pre_existing_dirty_files", "validation",
+    "version_bumped", "committed", "pushed",
+    "manual_verification_required", "report_path"
+  ],
+  "properties": {
+    "pass_id": {
+      "type": "string",
+      "description": "Full PASS_ID stem e.g. 26-05-09_P38_queue-prefix-selection. Never abbreviated."
+    },
+    "pass_name": {
+      "type": "string",
+      "description": "Human-readable pass name e.g. Queue Prefix Selection"
+    },
+    "date": {
+      "type": "string",
+      "description": "ISO date e.g. 2026-05-09"
+    },
+    "model": {
+      "type": "string",
+      "description": "Model string used e.g. gpt-5.5 or claude-sonnet-4-6"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "BUILD_SUCCEEDED",
+        "BUILD_FAILED",
+        "DOCUMENTATION_ONLY",
+        "WORKFLOW_ONLY",
+        "PARTIAL",
+        "BLOCKED"
+      ]
+    },
+    "agent_md_present": {
+      "type": "boolean",
+      "description": "Whether AGENT.md was present at the project root when this pass ran"
+    },
+    "schema_present": {
+      "type": "boolean",
+      "description": "Whether metadata-schema.json was present at the project root when this pass ran"
+    },
+    "gitignore_correct": {
+      "type": "boolean",
+      "description": "Whether build-report-logs/ was in .gitignore when this pass ran"
+    },
+    "build_result": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["outcome", "artifact"],
+          "properties": {
+            "outcome": {
+              "type": "string",
+              "enum": ["SUCCEEDED", "FAILED", "NOT_RUN"]
+            },
+            "app_version": { "type": "string" },
+            "bundle_version": { "type": "string" },
+            "artifact": { "type": "string" },
+            "configuration": {
+              "type": "string",
+              "enum": ["Release", "Debug"]
+            },
+            "signing_status": { "type": "string" },
+            "notarization_status": { "type": "string" }
+          }
+        },
+        { "type": "null" }
+      ],
+      "description": "Build outcome for implementation passes. null for documentation/workflow passes."
+    },
+    "files_read": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "files_created": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Files created by this pass only"
+    },
+    "files_modified": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Files modified by this pass only"
+    },
+    "pre_existing_dirty_files": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Files already modified before this pass began. Listed separately."
+    },
+    "validation": {
+      "type": "object",
+      "description": "Commands run and their outcomes"
+    },
+    "version_bumped": { "type": "boolean" },
+    "committed": { "type": "boolean" },
+    "pushed": { "type": "boolean" },
+    "manual_verification_required": { "type": "boolean" },
+    "report_path": { "type": "string" },
+    "behavior_changes": {
+      "type": "array",
+      "description": "Optional. Structured list of behavior changes made this pass.",
+      "items": {
+        "type": "object",
+        "required": ["id", "summary", "files_affected"],
+        "properties": {
+          "id": { "type": "string" },
+          "summary": { "type": "string" },
+          "files_affected": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "known_limitations": {
+      "type": "array",
+      "description": "Optional. Limitations or intentional non-changes documented this pass.",
+      "items": { "type": "string" }
+    },
+    "duration_seconds": {
+      "oneOf": [{ "type": "number" }, { "type": "null" }],
+      "description": "Elapsed pass time in seconds. Calculated from LAUNCH_TIME and COMPLETE_TIME in the meta file by scripts/ai-post-pass.zsh. Agent always writes null."
+    },
+    "total_tokens_used": {
+      "oneOf": [{ "type": "number" }, { "type": "null" }],
+      "description": "Total tokens consumed. Extracted from the clean log by scripts/ai-post-pass.zsh. Agent always writes null. Do not estimate."
+    }
+  }
+}

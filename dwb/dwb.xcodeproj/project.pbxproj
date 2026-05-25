@@ -9,31 +9,37 @@
 /* Begin PBXBuildFile section */
 		029E408914112547A40A1130 /* VolumeBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05577A9437B4AEFAD340CBE /* VolumeBarView.swift */; };
 		0720EB27E8C9596F1D6264CB /* MediaFileSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D60217E0E82E386D51B2DC4 /* MediaFileSupport.swift */; };
+		0B32A701913E71D4D9F1AA01 /* BottomRailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B32A700913E71D4D9F1AA01 /* BottomRailView.swift */; };
 		187A8E894D2B5B15C9F35249 /* VolumeOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63017D2AC29A0BF9BFB84F08 /* VolumeOverlayView.swift */; };
 		406C43AF645082F45763D113 /* VideoSurfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B57334593EE9F980FF69CA /* VideoSurfaceView.swift */; };
+		437618E4AD08E9FCAB95706B /* IdleAutohideController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62EC844CA09A8FB67D7F15E /* IdleAutohideController.swift */; };
 		44C949CABA5D158791A6B674 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBC53C0EF8397BE64EF0453B /* AppDelegate.swift */; };
 		6D5F4565185B97C09637F316 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0F865DF708082FD7F8E7693D /* Assets.xcassets */; };
-		72875A087214A834001CC886 /* PlaybackQueuePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC86012E03E83A5B985A8D9 /* PlaybackQueuePanel.swift */; };
 		81FDB7D6D77E45C44603ABDD /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C6414EA6B3AA256C6FD5F01 /* main.swift */; };
 		8A69EA89EB0E809CF2DF0586 /* PlayerWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF33CC52AD24B1981D4E44AB /* PlayerWindowController.swift */; };
 		A9FF5975B356825A2FB97929 /* TransportControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE33930DA6F0599267766541 /* TransportControlsView.swift */; };
 		D906E3BFCABF2D61C876186C /* QueuePageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7954F94831549F7CDC2EE1F /* QueuePageView.swift */; };
 		E3FAA7D43D9D251692CA28CB /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46F95A3999534816AD5B65D3 /* SettingsWindowController.swift */; };
+		B8F4A01C3D6E95278C4BAF23 /* DebugConsoleController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E3F90B2C5D84167B3A9E12 /* DebugConsoleController.swift */; };
+		C79A7B719A2E4476BD3F5301 /* RailButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = C79A7B709A2E4476BD3F5301 /* RailButton.swift */; };
 		F1DCB071ED1D9B9BD16097B5 /* VLCKitSPM in Frameworks */ = {isa = PBXBuildFile; productRef = A18894B0104EF9D2A3883F18 /* VLCKitSPM */; };
 		F4C4D74B374E4EF62ED62049 /* ScaleMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E5582026B4F107CCD6A68F7 /* ScaleMode.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0A9F28FEA54A701CC9DEE688 /* dwb.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = dwb.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0B32A700913E71D4D9F1AA01 /* BottomRailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomRailView.swift; sourceTree = "<group>"; };
 		0F865DF708082FD7F8E7693D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1D60217E0E82E386D51B2DC4 /* MediaFileSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaFileSupport.swift; sourceTree = "<group>"; };
 		46F95A3999534816AD5B65D3 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
+		A7E3F90B2C5D84167B3A9E12 /* DebugConsoleController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugConsoleController.swift; sourceTree = "<group>"; };
+		B62EC844CA09A8FB67D7F15E /* IdleAutohideController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdleAutohideController.swift; sourceTree = "<group>"; };
 		63017D2AC29A0BF9BFB84F08 /* VolumeOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeOverlayView.swift; sourceTree = "<group>"; };
 		7C6414EA6B3AA256C6FD5F01 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
-		7EC86012E03E83A5B985A8D9 /* PlaybackQueuePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackQueuePanel.swift; sourceTree = "<group>"; };
 		8E5582026B4F107CCD6A68F7 /* ScaleMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScaleMode.swift; sourceTree = "<group>"; };
 		A1B57334593EE9F980FF69CA /* VideoSurfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoSurfaceView.swift; sourceTree = "<group>"; };
 		B05577A9437B4AEFAD340CBE /* VolumeBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeBarView.swift; sourceTree = "<group>"; };
+		C79A7B709A2E4476BD3F5301 /* RailButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RailButton.swift; sourceTree = "<group>"; };
 		D7954F94831549F7CDC2EE1F /* QueuePageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueuePageView.swift; sourceTree = "<group>"; };
 		DF33CC52AD24B1981D4E44AB /* PlayerWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerWindowController.swift; sourceTree = "<group>"; };
 		FBC53C0EF8397BE64EF0453B /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -66,6 +72,7 @@
 				FBC53C0EF8397BE64EF0453B /* AppDelegate.swift */,
 				7C6414EA6B3AA256C6FD5F01 /* main.swift */,
 				46F95A3999534816AD5B65D3 /* SettingsWindowController.swift */,
+				A7E3F90B2C5D84167B3A9E12 /* DebugConsoleController.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -99,10 +106,12 @@
 		E4FE327C6C8B5348785C523E /* Player */ = {
 			isa = PBXGroup;
 			children = (
+				0B32A700913E71D4D9F1AA01 /* BottomRailView.swift */,
+				B62EC844CA09A8FB67D7F15E /* IdleAutohideController.swift */,
 				1D60217E0E82E386D51B2DC4 /* MediaFileSupport.swift */,
-				7EC86012E03E83A5B985A8D9 /* PlaybackQueuePanel.swift */,
-				DF33CC52AD24B1981D4E44AB /* PlayerWindowController.swift */,
+					DF33CC52AD24B1981D4E44AB /* PlayerWindowController.swift */,
 				D7954F94831549F7CDC2EE1F /* QueuePageView.swift */,
+				C79A7B709A2E4476BD3F5301 /* RailButton.swift */,
 				8E5582026B4F107CCD6A68F7 /* ScaleMode.swift */,
 				FE33930DA6F0599267766541 /* TransportControlsView.swift */,
 				A1B57334593EE9F980FF69CA /* VideoSurfaceView.swift */,
@@ -188,10 +197,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				44C949CABA5D158791A6B674 /* AppDelegate.swift in Sources */,
+				0B32A701913E71D4D9F1AA01 /* BottomRailView.swift in Sources */,
+				B8F4A01C3D6E95278C4BAF23 /* DebugConsoleController.swift in Sources */,
+				437618E4AD08E9FCAB95706B /* IdleAutohideController.swift in Sources */,
 				0720EB27E8C9596F1D6264CB /* MediaFileSupport.swift in Sources */,
-				72875A087214A834001CC886 /* PlaybackQueuePanel.swift in Sources */,
 				8A69EA89EB0E809CF2DF0586 /* PlayerWindowController.swift in Sources */,
 				D906E3BFCABF2D61C876186C /* QueuePageView.swift in Sources */,
+				C79A7B719A2E4476BD3F5301 /* RailButton.swift in Sources */,
 				F4C4D74B374E4EF62ED62049 /* ScaleMode.swift in Sources */,
 				E3FAA7D43D9D251692CA28CB /* SettingsWindowController.swift in Sources */,
 				A9FF5975B356825A2FB97929 /* TransportControlsView.swift in Sources */,
@@ -355,8 +367,8 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				CURRENT_PROJECT_VERSION = 201;
-				MARKETING_VERSION = 2.0.1;
+				CURRENT_PROJECT_VERSION = 412;
+				MARKETING_VERSION = 4.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.dwb.dwb;
 				SDKROOT = macosx;
 			};
@@ -375,8 +387,8 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				CURRENT_PROJECT_VERSION = 201;
-				MARKETING_VERSION = 2.0.1;
+				CURRENT_PROJECT_VERSION = 412;
+				MARKETING_VERSION = 4.1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.dwb.dwb;
 				SDKROOT = macosx;
 			};

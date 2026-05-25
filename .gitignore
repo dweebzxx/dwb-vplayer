@@ -19,11 +19,30 @@ DerivedData/
 dist/
 *.o
 *.d
+*.pkg
+*.dmg
+*.zip
+*.tar
+*.tar.gz
+*.tgz
 
 # Logs and local-only notes
 logs/
 *.log
 *.xcresult/
+*.archive
+*.xcarchive/
+
+# AI pass reports and build logs (local only)
+/readme-assets-inbox/
+build-report-logs/
+
+# Signing and provisioning material
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+*.keychain
 
 # Dependency manager output
 dwb/Pods/

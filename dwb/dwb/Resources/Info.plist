@@ -18,13 +18,24 @@
 			<key>CFBundleTypeExtensions</key>
 			<array>
 				<string>mp4</string>
+				<string>m4v</string>
 				<string>mov</string>
 				<string>avi</string>
 				<string>flv</string>
+				<string>f4v</string>
 				<string>wmv</string>
+				<string>asf</string>
 				<string>mkv</string>
 				<string>ts</string>
+				<string>mts</string>
+				<string>m2ts</string>
+				<string>m2t</string>
 				<string>mpg</string>
+				<string>3gp</string>
+				<string>3g2</string>
+				<string>vob</string>
+				<string>ogv</string>
+				<string>ogm</string>
 			</array>
 			<key>CFBundleTypeName</key>
 			<string>dwb Supported Video</string>
@@ -35,13 +46,20 @@
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>com.dwb.video.mp4</string>
+				<string>com.dwb.video.m4v</string>
 				<string>com.dwb.video.mov</string>
 				<string>com.dwb.video.avi</string>
 				<string>com.dwb.video.flv</string>
+				<string>com.dwb.video.f4v</string>
 				<string>com.dwb.video.wmv</string>
+				<string>com.dwb.video.asf</string>
 				<string>com.dwb.video.mkv</string>
 				<string>com.dwb.video.ts</string>
+				<string>com.dwb.video.mpeg-transport-variants</string>
 				<string>com.dwb.video.mpg</string>
+				<string>com.dwb.video.3gpp</string>
+				<string>com.dwb.video.vob</string>
+				<string>com.dwb.video.ogv-ogm</string>
 			</array>
 		</dict>
 	</array>
@@ -80,6 +98,25 @@
 				</array>
 				<key>public.mime-type</key>
 				<string>video/mp4</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.movie</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>M4V Video</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.dwb.video.m4v</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>m4v</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>video/x-m4v</string>
 			</dict>
 		</dict>
 		<dict>
@@ -145,6 +182,25 @@
 				<string>public.movie</string>
 			</array>
 			<key>UTTypeDescription</key>
+			<string>Flash MP4 Video</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.dwb.video.f4v</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>f4v</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>video/mp4</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.movie</string>
+			</array>
+			<key>UTTypeDescription</key>
 			<string>Windows Media Video</string>
 			<key>UTTypeIdentifier</key>
 			<string>com.dwb.video.wmv</string>
@@ -156,6 +212,25 @@
 				</array>
 				<key>public.mime-type</key>
 				<string>video/x-ms-wmv</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.movie</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Advanced Systems Format Video</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.dwb.video.asf</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>asf</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>video/x-ms-asf</string>
 			</dict>
 		</dict>
 		<dict>
@@ -202,6 +277,27 @@
 				<string>public.movie</string>
 			</array>
 			<key>UTTypeDescription</key>
+			<string>MPEG Transport Stream Variants</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.dwb.video.mpeg-transport-variants</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mts</string>
+					<string>m2ts</string>
+					<string>m2t</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>video/mp2t</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.movie</string>
+			</array>
+			<key>UTTypeDescription</key>
 			<string>MPEG Video</string>
 			<key>UTTypeIdentifier</key>
 			<string>com.dwb.video.mpg</string>
@@ -213,6 +309,63 @@
 				</array>
 				<key>public.mime-type</key>
 				<string>video/mpeg</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.movie</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>3GPP Video</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.dwb.video.3gpp</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>3gp</string>
+					<string>3g2</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>video/3gpp</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.movie</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>DVD Video Object</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.dwb.video.vob</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>vob</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>video/mpeg</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.movie</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>OGV/OGM Video</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.dwb.video.ogv-ogm</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>ogv</string>
+					<string>ogm</string>
+				</array>
 			</dict>
 		</dict>
 	</array>

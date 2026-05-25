@@ -2,6 +2,8 @@ import Cocoa
 
 class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
+    private let maxPlayerWindowCount = 5
+
     var windowControllers: [PlayerWindowController] = []
     private weak var rewindMenuItem: NSMenuItem?
     private weak var forwardMenuItem: NSMenuItem?
@@ -9,13 +11,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         SettingsWindowController.registerDefaults()
+        _ = DebugConsoleController.shared   // eagerly init so it observes settings from launch
         buildMainMenu()
         observeSettings()
         updateSkipMenuItemTitles()
         openInitialPlayerWindowIfNeeded()
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+        DebugConsoleController.log("app", "launched: version=\(version) build=\(build) pid=\(ProcessInfo.processInfo.processIdentifier)")
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        DebugConsoleController.log("app", "terminating")
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return true
+    }
+
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
         return true
     }
 
@@ -41,7 +55,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
 
         if visiblePlayerWindows.isEmpty {
-            openNewPlayerWindow()
+            _ = openNewPlayerWindow()
         } else {
             visiblePlayerWindows.forEach { $0.deminiaturize(nil) }
             visiblePlayerWindows.last?.makeKeyAndOrderFront(nil)
@@ -54,7 +68,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     // MARK: - Window management
 
     @discardableResult
-    func openNewPlayerWindow() -> PlayerWindowController {
+    func openNewPlayerWindow() -> PlayerWindowController? {
+        pruneClosedPlayerWindowControllers()
+        guard windowControllers.count < maxPlayerWindowCount else {
+            presentWindowCapDenial(context: "new-window")
+            return nil
+        }
         let wc = PlayerWindowController()
         // Cascade from the most recently opened window so new windows don't
         // stack exactly on top of existing ones.  cascadeTopLeft(from:) uses
@@ -74,7 +93,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             guard let self = self,
                   !self.hasReceivedOpenEventDuringLaunch,
                   self.usablePlayerWindowController() == nil else { return }
-            self.openNewPlayerWindow()
+            _ = self.openNewPlayerWindow()
         }
     }
 
@@ -84,7 +103,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         hasReceivedOpenEventDuringLaunch = true
 
-        let wc = usablePlayerWindowController() ?? openNewPlayerWindow()
+        guard let wc = usablePlayerWindowController() ?? openNewPlayerWindow() else { return }
         wc.window?.deminiaturize(nil)
         wc.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -116,6 +135,95 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             }
         }
         return windowControllers.last { $0.window?.isVisible == true }
+    }
+
+    private func pruneClosedPlayerWindowControllers() {
+        windowControllers.removeAll { $0.window == nil }
+    }
+
+    private func presentWindowCapDenial(context: String) {
+        DebugConsoleController.log(level: .warning,
+                                   category: "window",
+                                   message: "windowCapDenied: context=\(context) cap=\(maxPlayerWindowCount) current=\(windowControllers.count)")
+        let alert = NSAlert()
+        alert.messageText = "Window limit reached"
+        alert.informativeText = "dwb supports up to \(maxPlayerWindowCount) player windows."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        if let sheetWindow = NSApp.keyWindow ?? NSApp.mainWindow {
+            alert.beginSheetModal(for: sheetWindow)
+        } else {
+            alert.runModal()
+        }
+    }
+
+    private func orderedPlayerWindowControllers() -> [PlayerWindowController] {
+        pruneClosedPlayerWindowControllers()
+        var ordered: [PlayerWindowController] = []
+        if let front = usablePlayerWindowController() {
+            ordered.append(front)
+        }
+        for window in NSApp.orderedWindows {
+            guard let wc = window.windowController as? PlayerWindowController,
+                  !ordered.contains(where: { $0 === wc }) else { continue }
+            ordered.append(wc)
+        }
+        for wc in windowControllers where !ordered.contains(where: { $0 === wc }) {
+            ordered.append(wc)
+        }
+        return ordered
+    }
+
+    private func gridTargetScreen(from selected: [PlayerWindowController]) -> NSScreen? {
+        if let front = usablePlayerWindowController(),
+           let screen = front.window?.screen {
+            return screen
+        }
+        return selected.first(where: { $0.window?.isKeyWindow == true })?.window?.screen
+            ?? selected.first(where: { $0.window?.isMainWindow == true })?.window?.screen
+            ?? NSScreen.main
+    }
+
+    private func arrangeFourWindowGrid() {
+        var selected = orderedPlayerWindowControllers()
+        let initialCount = selected.count
+        let needed = max(0, 4 - selected.count)
+
+        for _ in 0..<needed {
+            guard let wc = openNewPlayerWindow() else {
+                DebugConsoleController.log(level: .warning,
+                                           category: "window",
+                                           message: "fourWindowGrid: deniedByCap initial=\(initialCount) selected=\(selected.count) cap=\(maxPlayerWindowCount)")
+                return
+            }
+            selected.append(wc)
+        }
+
+        selected = Array(selected.prefix(4))
+        guard selected.count == 4 else {
+            presentWindowCapDenial(context: "four-window-grid")
+            return
+        }
+
+        guard let screen = gridTargetScreen(from: selected) ?? NSScreen.main ?? NSScreen.screens.first else { return }
+        let visibleFrame = screen.visibleFrame
+        let halfW = floor(visibleFrame.width / 2)
+        let halfH = floor(visibleFrame.height / 2)
+        let frames = [
+            NSRect(x: visibleFrame.minX, y: visibleFrame.minY + halfH, width: halfW, height: visibleFrame.height - halfH),
+            NSRect(x: visibleFrame.minX + halfW, y: visibleFrame.minY + halfH, width: visibleFrame.width - halfW, height: visibleFrame.height - halfH),
+            NSRect(x: visibleFrame.minX, y: visibleFrame.minY, width: halfW, height: halfH),
+            NSRect(x: visibleFrame.minX + halfW, y: visibleFrame.minY, width: visibleFrame.width - halfW, height: halfH)
+        ]
+
+        for (wc, frame) in zip(selected, frames) {
+            wc.window?.setFrame(frame, display: true, animate: false)
+            wc.window?.deminiaturize(nil)
+            wc.showWindow(nil)
+        }
+        selected.first?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        DebugConsoleController.log("window", "fourWindowGrid: initial=\(initialCount) opened=\(needed) arranged=\(selected.map(\.debugIdentity).joined(separator: ",")) screen=\(screen.localizedName) frame=\(Int(visibleFrame.width))x\(Int(visibleFrame.height))")
     }
 
     private func noteRecentDocumentURLs(from urls: [URL]) {
@@ -153,9 +261,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc func openFile(_ sender: Any) {
         guard let wc = NSApp.keyWindow?.windowController as? PlayerWindowController else {
-            let wc = PlayerWindowController()
-            wc.showWindow(nil)
-            windowControllers.append(wc)
+            guard let wc = openNewPlayerWindow() else { return }
             wc.openFile()
             return
         }
@@ -175,7 +281,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     @objc func newWindow(_ sender: Any) {
-        openNewPlayerWindow()
+        _ = openNewPlayerWindow()
+    }
+
+    @objc func fourWindowGrid(_ sender: Any) {
+        arrangeFourWindowGrid()
     }
 
     @objc func playPause(_ sender: Any) {
@@ -241,7 +351,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case 10: // Reveal in Finder
             return frontPlayerWindowController?.currentMediaURL != nil
         case 11: // Rename
-            return frontPlayerWindowController?.currentMediaURL != nil
+            return frontPlayerWindowController?.canRenameCurrentMedia == true
         case 12: // Remove from Queue
             return frontPlayerWindowController?.currentMediaURL != nil
         case 20: // Shuffle
@@ -253,6 +363,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case 22: // Repeat One
             menuItem.state = frontPlayerWindowController?.isRepeatOne == true ? .on : .off
             return frontPlayerWindowController?.currentMediaURL != nil
+        case 30: // Keep Window On Top
+            menuItem.state = frontPlayerWindowController?.isKeepAtTop == true ? .on : .off
+        case 31: // Auto-hide Titlebar
+            menuItem.state = SettingsWindowController.isAutoHideTitlebarEnabled() ? .on : .off
         default:
             break
         }
@@ -470,8 +584,44 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         windowMenu.addItem(withTitle: "Zoom",
                            action: #selector(NSWindow.performZoom(_:)),
                            keyEquivalent: "")
+
+        windowMenu.addItem(.separator())
+
+        let gridItem = NSMenuItem(title: "Four Window Grid",
+                                  action: #selector(fourWindowGrid(_:)),
+                                  keyEquivalent: "4")
+        gridItem.keyEquivalentModifierMask = .command
+        gridItem.target = self
+        windowMenu.addItem(gridItem)
+
+        windowMenu.addItem(.separator())
+
+        let keepAtTopItem = NSMenuItem(title: "Keep Window On Top",
+                                       action: #selector(toggleKeepAtTop(_:)),
+                                       keyEquivalent: "")
+        keepAtTopItem.target = self
+        keepAtTopItem.tag    = 30
+        windowMenu.addItem(keepAtTopItem)
+
+        let autoHideTitlebarItem = NSMenuItem(title: "Auto-hide Titlebar",
+                                              action: #selector(toggleAutoHideTitlebar(_:)),
+                                              keyEquivalent: "")
+        autoHideTitlebarItem.target = self
+        autoHideTitlebarItem.tag    = 31
+        windowMenu.addItem(autoHideTitlebarItem)
+
         NSApp.windowsMenu = windowMenu
 
         NSApp.mainMenu = mainMenu
+    }
+
+    @objc func toggleKeepAtTop(_ sender: Any) {
+        frontPlayerWindowController?.toggleKeepAtTop()
+    }
+
+    @objc func toggleAutoHideTitlebar(_ sender: Any) {
+        let current = SettingsWindowController.isAutoHideTitlebarEnabled()
+        UserDefaults.standard.set(!current, forKey: SettingsWindowController.autoHideTitlebarKey)
+        NotificationCenter.default.post(name: .autoHideTitlebarChanged, object: nil)
     }
 }

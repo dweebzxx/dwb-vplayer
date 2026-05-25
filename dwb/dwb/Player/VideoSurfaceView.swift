@@ -1,5 +1,31 @@
 import Cocoa
 
+private enum MediaDropRouting {
+    static func readDroppedURLs(from sender: NSDraggingInfo) -> [URL]? {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        guard let urls = sender.draggingPasteboard
+                .readObjects(forClasses: [NSURL.self], options: options) as? [URL],
+              !urls.isEmpty else { return nil }
+        return urls
+    }
+
+    static func isValidDrop(_ sender: NSDraggingInfo) -> Bool {
+        guard let urls = readDroppedURLs(from: sender) else { return false }
+        return urls.contains { url in
+            var isDir: ObjCBool = false
+            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+            return isDir.boolValue || MediaFileSupport.isSupported(url)
+        }
+    }
+
+    static func performDrop(_ sender: NSDraggingInfo, in window: NSWindow?) -> Bool {
+        guard let urls = readDroppedURLs(from: sender),
+              let wc = window?.windowController as? PlayerWindowController else { return false }
+        wc.handleDroppedURLs(urls, appendingExplicitFiles: true)
+        return true
+    }
+}
+
 /// The NSView into which VLCMediaPlayer renders its video output.
 /// Background is black. Scroll wheel adjusts volume (0–150), clamped.
 /// Double-click toggles fullscreen. Accepts file/folder drops (single or multi).
@@ -24,6 +50,8 @@ class VideoSurfaceView: NSView {
     }
 
     override var acceptsFirstResponder: Bool { true }
+    // L1: full-bleed black/video host — no transparency needed.
+    override var isOpaque: Bool { true }
 
     // MARK: - Keyboard transport (Space / ← / →)
     //
@@ -39,6 +67,7 @@ class VideoSurfaceView: NSView {
             super.keyDown(with: event)
             return
         }
+        wc.noteChromeActivity()
         switch event.keyCode {
         case 49:   // Space — play/pause, no repeat
             if !event.isARepeat { wc.togglePlayPause() }
@@ -54,7 +83,43 @@ class VideoSurfaceView: NSView {
                 wc.skipForward10()
                 scheduleSeekRepeat(backward: false, controller: wc)
             }
+        case 125:  // Down Arrow — volume down
+            wc.volumeDown()
+        case 126:  // Up Arrow — volume up
+            wc.volumeUp()
         default:
+            // Character shortcuts — video player mode only, no modifier keys.
+            // Cmd+1/2/3 go through the menu system before reaching here, so
+            // plain 1/3 do not conflict with the Video > Fit/Stretch menu items.
+            let noMods = event.modifierFlags
+                .intersection([.command, .option, .control, .shift]).isEmpty
+            if noMods, let chars = event.charactersIgnoringModifiers {
+                switch chars {
+                case "1":
+                    SettingsWindowController.setSkipDuration(10)
+                    return
+                case "3":
+                    SettingsWindowController.setSkipDuration(30)
+                    return
+                case "6":
+                    SettingsWindowController.setSkipDuration(60)
+                    return
+                case "9":
+                    SettingsWindowController.setSkipDuration(180)
+                    return
+                case "z":
+                    if !event.isARepeat { wc.playPrevious() }
+                    return
+                case "x":
+                    if !event.isARepeat { wc.playNext() }
+                    return
+                case "q":
+                    if !event.isARepeat { wc.performXPrefixRenameCurrentItem() }
+                    return
+                default:
+                    break
+                }
+            }
             super.keyDown(with: event)
         }
     }
@@ -68,6 +133,11 @@ class VideoSurfaceView: NSView {
         default:
             super.keyUp(with: event)
         }
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        (window?.windowController as? PlayerWindowController)?.noteChromeActivity()
+        super.flagsChanged(with: event)
     }
 
     /// Start a two-phase timer for smooth hold-to-seek:
@@ -138,26 +208,66 @@ class VideoSurfaceView: NSView {
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         setDragHighlight(false)
-        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
-        guard let urls = sender.draggingPasteboard
-                .readObjects(forClasses: [NSURL.self], options: options) as? [URL],
-              !urls.isEmpty else { return false }
-        guard let wc = window?.windowController as? PlayerWindowController else { return false }
-        // Explicit file drops append to this window's queue; folder drops still replace.
-        wc.handleDroppedURLs(urls, appendingExplicitFiles: true)
-        return true
+        return MediaDropRouting.performDrop(sender, in: window)
     }
 
     private func isValidDrop(_ sender: NSDraggingInfo) -> Bool {
-        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
-        guard let urls = sender.draggingPasteboard
-                .readObjects(forClasses: [NSURL.self], options: options) as? [URL],
-              !urls.isEmpty else { return false }
-        // Accept if any URL is a directory or a supported media file
-        return urls.contains { url in
-            var isDir: ObjCBool = false
-            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
-            return isDir.boolValue || MediaFileSupport.isSupported(url)
+        MediaDropRouting.isValidDrop(sender)
+    }
+}
+
+final class ImageSurfaceView: NSImageView {
+    private var isDragHighlighted = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.black.cgColor
+        imageScaling = .scaleProportionallyUpOrDown
+        imageAlignment = .alignCenter
+        registerForDraggedTypes([.fileURL])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not used – UI is programmatic")
+    }
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            window?.toggleFullScreen(nil)
         }
+        super.mouseDown(with: event)
+    }
+
+    private func setDragHighlight(_ on: Bool) {
+        guard isDragHighlighted != on else { return }
+        isDragHighlighted = on
+        layer?.borderWidth = on ? 3 : 0
+        layer?.borderColor = NSColor.systemBlue.cgColor
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard MediaDropRouting.isValidDrop(sender) else { return [] }
+        setDragHighlight(true)
+        return .copy
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard MediaDropRouting.isValidDrop(sender) else {
+            setDragHighlight(false)
+            return []
+        }
+        return .copy
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        setDragHighlight(false)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        setDragHighlight(false)
+        return MediaDropRouting.performDrop(sender, in: window)
     }
 }

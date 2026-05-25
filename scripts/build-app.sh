@@ -4,7 +4,7 @@ set -u -o pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_PATH="$ROOT_DIR/dwb/dwb.xcodeproj"
 SCHEME="${DWB_SCHEME:-dwb}"
-CONFIGURATION="${DWB_CONFIGURATION:-Debug}"
+CONFIGURATION="${DWB_CONFIGURATION:-Release}"
 DESTINATION="${DWB_DESTINATION:-platform=macOS}"
 DERIVED_DATA_PATH="${DWB_DERIVED_DATA_PATH:-$ROOT_DIR/.tmp/derivedData}"
 DIST_DIR="$ROOT_DIR/dist"
@@ -49,6 +49,69 @@ write_build_info() {
     } > "$BUILD_INFO_PATH"
 }
 
+detect_stale_vlckit_paths() {
+    local files=()
+    local workspace_state="$DERIVED_DATA_PATH/SourcePackages/workspace-state.json"
+    local pif_cache="$DERIVED_DATA_PATH/Build/Intermediates.noindex/XCBuildData/PIFCache"
+    [[ -f "$workspace_state" ]] && files+=("$workspace_state")
+    if [[ -d "$pif_cache" ]]; then
+        local file
+        while IFS= read -r file; do
+            files+=("$file")
+        done < <(find "$pif_cache" -type f \( -name '*-json' -o -name '*.json' \) -print 2>/dev/null)
+    fi
+    [[ ${#files[@]} -gt 0 ]] || return 0
+
+    LC_ALL=C grep -IhoE '/Users/[^"[:space:]]*VLCKit-all\.xcframework' "${files[@]}" 2>/dev/null \
+        | LC_ALL=C sort -u \
+        | while IFS= read -r path; do
+            case "$path" in
+                "$ROOT_DIR"/*) ;;
+                *) printf "%s\n" "$path" ;;
+            esac
+          done
+}
+
+clean_stale_vlckit_build_state_if_needed() {
+    local stale_paths
+    stale_paths="$(detect_stale_vlckit_paths || true)"
+    [[ -n "$stale_paths" ]] || return 0
+
+    printf "Detected stale VLCKit SwiftPM artifact paths in project-local build state:\n" >&2
+    printf "%s\n" "$stale_paths" >&2
+    printf "Cleaning repo-local generated Xcode state so SwiftPM can regenerate local artifact paths.\n" >&2
+
+    local workspace_state="$DERIVED_DATA_PATH/SourcePackages/workspace-state.json"
+    local xcbuild_data="$DERIVED_DATA_PATH/Build/Intermediates.noindex/XCBuildData"
+
+    [[ -f "$workspace_state" ]] && rm -f "$workspace_state" && printf "Removed %s\n" "$workspace_state" >&2
+    [[ -d "$xcbuild_data" ]] && rm -rf "$xcbuild_data" && printf "Removed %s\n" "$xcbuild_data" >&2
+}
+
+print_build_path_diagnostics() {
+    printf "Build path diagnostics:\n" >&2
+    printf "  root: %s\n" "$ROOT_DIR" >&2
+    printf "  derived data: %s\n" "$DERIVED_DATA_PATH" >&2
+    printf "  package cache: %s\n" "$SWIFTPM_CACHE_PATH" >&2
+    printf "  clang module cache: %s\n" "$CLANG_CACHE_PATH" >&2
+    printf "  swift module cache: %s\n" "$SWIFT_CACHE_PATH" >&2
+    printf "  searched cached VLCKit product roots:\n" >&2
+    printf "    %s\n" "$DERIVED_DATA_PATH/Build/Products" >&2
+    printf "    %s\n" "$ROOT_DIR/.tmp" >&2
+    if [[ -n "${DWB_VLCKIT_PRODUCTS_DIR:-}" ]]; then
+        printf "    %s (DWB_VLCKIT_PRODUCTS_DIR)\n" "$DWB_VLCKIT_PRODUCTS_DIR" >&2
+    fi
+
+    local stale_paths
+    stale_paths="$(detect_stale_vlckit_paths || true)"
+    if [[ -n "$stale_paths" ]]; then
+        printf "  stale absolute VLCKit artifact paths still present:\n" >&2
+        printf "%s\n" "$stale_paths" | sed 's/^/    /' >&2
+    else
+        printf "  stale absolute VLCKit artifact paths: none detected\n" >&2
+    fi
+}
+
 show_build_settings() {
     xcodebuild \
         -project "$effective_project_path" \
@@ -69,7 +132,29 @@ copy_app_to_dist() {
     printf "Build info written to %s\n" "$BUILD_INFO_PATH"
 }
 
+sign_dist_app() {
+    if [[ "${DWB_SKIP_SIGN:-0}" == "1" ]]; then
+        printf "App signing skipped because DWB_SKIP_SIGN=1\n"
+        return 0
+    fi
+
+    local sign_args=(--app "$DIST_APP_PATH")
+    if [[ -n "${DWB_SIGNING_IDENTITY:-}" ]]; then
+        sign_args+=(--identity "$DWB_SIGNING_IDENTITY")
+        if [[ "${DWB_SIGNING_IDENTITY:-}" != "-" && "${DWB_SIGN_TIMESTAMP:-0}" == "1" ]]; then
+            sign_args+=(--timestamp)
+        else
+            sign_args+=(--no-timestamp)
+        fi
+    else
+        sign_args+=(--adhoc --no-timestamp)
+    fi
+
+    zsh "$ROOT_DIR/scripts/sign-app.sh" "${sign_args[@]}"
+}
+
 build_standard() {
+    clean_stale_vlckit_build_state_if_needed
     xcodebuild \
         -project "$PROJECT_PATH" \
         -scheme "$SCHEME" \
@@ -95,12 +180,13 @@ find_cached_vlckit_products() {
     fi
 
     local candidate
-    candidate="$(find "$HOME/Library/Developer/Xcode/DerivedData" \
+    candidate="$(find "$DERIVED_DATA_PATH/Build/Products" "$ROOT_DIR/.tmp" \
         -path "*/Build/Products/$CONFIGURATION/VLCKitSPM.o" \
         -print -quit 2>/dev/null || true)"
     if [[ -n "$candidate" ]]; then
         candidate="$(dirname "$candidate")"
         if [[ -d "$candidate/VLCKitSPM.swiftmodule" && -d "$candidate/VLCKit.framework" ]]; then
+            printf "Using cached VLCKit products discovered at %s\n" "$candidate" >&2
             printf "%s\n" "$candidate"
             return 0
         fi
@@ -149,14 +235,17 @@ build_no_swiftpm_from_cache() {
 
 if ! build_standard; then
     printf "Standard build failed; attempting cached VLCKit build fallback.\n" >&2
+    print_build_path_diagnostics
     if cached_products="$(find_cached_vlckit_products)"; then
         if ! build_no_swiftpm_from_cache "$cached_products"; then
             write_build_info "NO"
+            print_build_path_diagnostics
             exit 1
         fi
     else
         write_build_info "NO"
-        printf "No cached VLCKit products found. Set DWB_VLCKIT_PRODUCTS_DIR and retry.\n" >&2
+        printf "No cached VLCKit products found in project-local generated build state.\n" >&2
+        print_build_path_diagnostics
         exit 1
     fi
 fi
@@ -188,3 +277,4 @@ if [[ "$build_mode" == "cached-vlckit-products" ]]; then
 fi
 
 copy_app_to_dist "$built_app_path"
+sign_dist_app
