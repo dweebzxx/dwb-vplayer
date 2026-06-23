@@ -190,6 +190,11 @@ class PlayerWindowController: NSWindowController {
     /// Shuffled:      a permutation of the same indices.
     private var displayOrder: [Int] = []
 
+    /// Explicit folder URLs opened or dropped into this window's queue, in addition order.
+    /// Used by the Rescan Folder action to re-enumerate folder contents.
+    /// Cleared when the queue is fully replaced or removed.
+    private var sourceFolderURLs: [URL] = []
+
     /// Current position in `displayOrder`. -1 when no set is loaded.
     private var currentDisplayIndex: Int = -1
 
@@ -1098,7 +1103,15 @@ class PlayerWindowController: NSWindowController {
 
     /// Convenience: sets a one-item playback set.
     func play(url: URL) {
+        sourceFolderURLs = []
         openAndPlay(set: [url])
+    }
+
+    /// Appends `folder` to `sourceFolderURLs` if not already tracked (by standardized path).
+    private func trackSourceFolder(_ folder: URL) {
+        let path = folder.standardizedFileURL.path
+        guard !sourceFolderURLs.contains(where: { $0.standardizedFileURL.path == path }) else { return }
+        sourceFolderURLs.append(folder)
     }
 
     // MARK: - Navigation
@@ -1552,6 +1565,7 @@ class PlayerWindowController: NSWindowController {
         // isUserStop were missed, advanceToNextItem would correctly find nothing.
         playbackSet.removeAll()
         displayOrder.removeAll()
+        sourceFolderURLs.removeAll()
         currentDisplayIndex          = -1
         currentMediaURL              = nil
         currentDurationIsProvisional = false
@@ -1736,8 +1750,10 @@ class PlayerWindowController: NSWindowController {
                 }
                 let queueEmpty = playbackSet.isEmpty || displayOrder.isEmpty
                 if queueEmpty {
+                    sourceFolderURLs = [folder]
                     openAndPlay(set: result.media)
                 } else {
+                    trackSourceFolder(folder)
                     appendToQueue(files: result.media)
                 }
                 return
@@ -1779,8 +1795,10 @@ class PlayerWindowController: NSWindowController {
         }
 
         if appendingExplicitFiles {
+            for dir in dirs { trackSourceFolder(dir) }
             appendToQueue(files: expanded)
         } else {
+            sourceFolderURLs = dirs
             openAndPlay(set: expanded)
         }
     }
@@ -4011,6 +4029,107 @@ extension PlayerWindowController: QueuePageViewDelegate {
 
     func queuePageDidRequestAddMedia(_ view: QueuePageView) {
         openFile()
+    }
+
+    func queuePageDidRequestRescan(_ view: QueuePageView) {
+        guard let win = window else { return }
+
+        // Determine folders to scan: explicit tracked folders, else fallback to parent dirs of queue items.
+        var foldersToScan: [URL] = sourceFolderURLs
+        if foldersToScan.isEmpty {
+            var seenPaths = Set<String>()
+            for url in playbackSet where url.isFileURL {
+                let parent = url.deletingLastPathComponent()
+                let path = parent.standardizedFileURL.path
+                if seenPaths.insert(path).inserted {
+                    foldersToScan.append(parent)
+                }
+            }
+        }
+
+        guard !foldersToScan.isEmpty else {
+            let a = NSAlert()
+            a.messageText = "Rescan Folder"
+            a.informativeText = "No folder context found for this queue. Open or drop a folder to enable folder rescan."
+            a.alertStyle = .informational
+            a.addButton(withTitle: "OK")
+            a.beginSheetModal(for: win)
+            return
+        }
+
+        // Enumerate fresh file list from all tracked folders (no cross-folder duplicates).
+        var freshURLs: [URL] = []
+        var freshPaths = Set<String>()
+        for folder in foldersToScan {
+            let files = MediaFileSupport.sortedSupportedFiles(
+                inFolder: folder,
+                acceptedKinds: SettingsWindowController.acceptedMediaKinds()
+            )
+            for url in files {
+                let path = url.standardizedFileURL.path
+                if freshPaths.insert(path).inserted {
+                    freshURLs.append(url)
+                }
+            }
+        }
+
+        // Capture the currently playing URL before modifying state.
+        let playingURL: URL? = currentSetIndex >= 0 && currentSetIndex < playbackSet.count
+            ? playbackSet[currentSetIndex]
+            : nil
+        let playingPath = playingURL?.standardizedFileURL.path
+
+        // Walk current display order: keep items still present on disk, plus the currently
+        // playing item even if it has been removed from disk (preserves active playback).
+        var newURLs: [URL] = []
+        var newURLPaths = Set<String>()
+        for pbIdx in displayOrder {
+            guard pbIdx >= 0, pbIdx < playbackSet.count else { continue }
+            let url = playbackSet[pbIdx]
+            let path = url.standardizedFileURL.path
+            if freshPaths.contains(path) || path == playingPath {
+                if newURLPaths.insert(path).inserted {
+                    newURLs.append(url)
+                }
+            }
+        }
+
+        // Append files now present in folder but not already in the new set.
+        for url in freshURLs {
+            let path = url.standardizedFileURL.path
+            if newURLPaths.insert(path).inserted {
+                newURLs.append(url)
+            }
+        }
+
+        // Compute feedback counts before modifying state.
+        let originalPaths = Set(playbackSet.map { $0.standardizedFileURL.path })
+        let addedCount = freshPaths.subtracting(originalPaths).count
+        let removedCount = originalPaths.subtracting(freshPaths).filter { $0 != playingPath }.count
+
+        // Locate new display index for the currently playing item.
+        let newCurrentDisplayIndex: Int
+        if let playingPath = playingPath,
+           let idx = newURLs.firstIndex(where: { $0.standardizedFileURL.path == playingPath }) {
+            newCurrentDisplayIndex = idx
+        } else {
+            newCurrentDisplayIndex = newURLs.isEmpty ? -1 : max(0, min(currentDisplayIndex, newURLs.count - 1))
+        }
+
+        // Prune duration caches for removed entries.
+        let newPathSet = newURLPaths
+        durationCache = durationCache.filter { newPathSet.contains($0.key.standardizedFileURL.path) }
+        durationSecondsCache = durationSecondsCache.filter { newPathSet.contains($0.key.standardizedFileURL.path) }
+
+        // Apply new queue state (does not touch playback).
+        playbackSet = newURLs
+        displayOrder = Array(0..<newURLs.count)
+        currentDisplayIndex = newCurrentDisplayIndex
+
+        applyQueueSortIfNeeded(reason: "rescan")
+        if isQueuePageOpen { refreshQueuePage() }
+
+        DebugConsoleController.log("rescan", "rescan: added=\(addedCount) removed=\(removedCount) total=\(newURLs.count)")
     }
 
     /// Row drag-and-drop reorder from Queue Page.

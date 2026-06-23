@@ -399,7 +399,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private var sidebarButtons: [SettingsSidebarItemButton] = []
     private let detailContainer = NSView()
     private var sectionViews:   [NSView] = []
-    private let sectionNames    = ["Playback", "Controls", "Queue & Files", "Developer"]
+    private let sectionNames    = ["Playback", "Controls", "Queue & Files", "Developer", "About"]
 
     // MARK: - Init
 
@@ -524,6 +524,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             buildControlsSection(),
             buildQueueFilesSection(),
             buildDeveloperSection(),
+            buildAboutSection(),
         ]
         for (i, sv) in sectionViews.enumerated() {
             sv.translatesAutoresizingMaskIntoConstraints = false
@@ -748,6 +749,48 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         ])
 
         return buildSectionContainer(sections: [section1])
+    }
+
+    // MARK: - Section: About
+
+    private func buildAboutSection() -> NSView {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "—"
+        let build   = info?["CFBundleVersion"]            as? String ?? "—"
+        let copyright = info?["NSHumanReadableCopyright"] as? String ?? ""
+
+        func makeLabel(_ text: String, size: CGFloat = NSFont.systemFontSize, weight: NSFont.Weight = .regular, color: NSColor = .labelColor) -> NSTextField {
+            let lbl = NSTextField(labelWithString: text)
+            lbl.font = .systemFont(ofSize: size, weight: weight)
+            lbl.textColor = color
+            lbl.isSelectable = false
+            lbl.translatesAutoresizingMaskIntoConstraints = false
+            return lbl
+        }
+
+        let nameLabel    = makeLabel("dwb player", size: 17, weight: .semibold)
+        let versionLabel = makeLabel("Version \(version)  ·  Build \(build)", color: .secondaryLabelColor)
+        let descLabel    = makeLabel("Local media playback for macOS", color: .secondaryLabelColor)
+        let platformLabel = makeLabel("Requires macOS 13 or later", color: .tertiaryLabelColor)
+        let techLabel    = makeLabel("Built with AppKit and VLCKit", color: .tertiaryLabelColor)
+
+        var rows: [NSView] = [nameLabel, versionLabel, descLabel, platformLabel, techLabel]
+
+        if !copyright.isEmpty {
+            let crLabel = makeLabel("© \(copyright)", color: .tertiaryLabelColor)
+            rows.append(crLabel)
+        }
+
+        let stack = NSStackView(views: rows)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        stack.setCustomSpacing(10, after: nameLabel)
+        stack.setCustomSpacing(4, after: versionLabel)
+        stack.setCustomSpacing(12, after: descLabel)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        return buildSectionContainer(sections: [stack])
     }
 
     // MARK: - Layout helpers

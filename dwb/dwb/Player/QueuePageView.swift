@@ -24,6 +24,8 @@ protocol QueuePageViewDelegate: AnyObject {
     func queuePage(_ view: QueuePageView, didRequestDeleteRows indices: [Int])
     /// Called from the queue empty state to use the app's existing media-open flow.
     func queuePageDidRequestAddMedia(_ view: QueuePageView)
+    /// Called when the user triggers the folder rescan action from the queue footer.
+    func queuePageDidRequestRescan(_ view: QueuePageView)
 }
 
 /// Full in-window Queue Page panel.
@@ -141,10 +143,15 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
 
     private let headerView       = NSView()
     private let titleLabel       = NSTextField(labelWithString: "Queue")
+    private let searchSortPill   = QueueSearchSortPillView()
+    private let searchSortDivider = QueuePassthroughView()
+    private let searchIconView   = QueueCenteredSymbolView()
     private let sortPopUpButton  = NSPopUpButton()
+    private let sortTitleView    = QueueCenteredTextView()
+    private let sortChevronView  = QueueCenteredSymbolView()
     private let searchField      = NSSearchField()
-    private let bookmarkFilterButton = NSButton()
-    private let closeButton      = NSButton()
+    private let bookmarkFilterButton = QueueHeaderSymbolButton(frame: .zero)
+    private let closeButton      = QueueHeaderSymbolButton(frame: .zero)
     private let topSeparator     = NSView()
     let scrollView               = NSScrollView()
     let tableView                = QueuePageTableView()
@@ -157,8 +164,13 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
     private let bottomSeparator  = NSView()
     private let bottomBar        = NSView()
     private let deleteButton              = NSButton()
+    private let prefixPill                = NSView()
+    private let prefixPillDivider         = NSView()
     private let customPrefixButton        = NSButton()
     private let customPrefixSecondaryButton = NSButton()
+    private let footerPrefixSeparator     = NSView()
+    private let rescanButton              = NSButton()
+    private let footerClearSeparator      = NSView()
     private let removeAllButton           = NSButton()
     private let totalDurationLabel = NSTextField(labelWithString: "Total: 00:00:00")
 
@@ -241,8 +253,37 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
         titleLabel.isBordered     = false
         headerView.addSubview(titleLabel)
 
+        searchSortPill.wantsLayer = true
+        searchSortPill.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.10).cgColor
+        searchSortPill.layer?.cornerRadius = 12
+        headerView.addSubview(searchSortPill)
+
+        searchSortDivider.wantsLayer = true
+        searchSortDivider.layer?.backgroundColor = Palette.separator.cgColor
+        searchSortPill.addSubview(searchSortDivider)
+
+        searchIconView.configure(symbolName: "magnifyingglass",
+                                 pointSize: 13,
+                                 weight: .regular,
+                                 color: Palette.secondaryText,
+                                 accessibilityDescription: nil)
+        searchSortPill.addSubview(searchIconView)
+
+        sortTitleView.font = .systemFont(ofSize: 10.5, weight: .regular)
+        sortTitleView.textColor = Palette.primaryText
+        searchSortPill.addSubview(sortTitleView)
+
+        sortChevronView.configure(symbolName: "chevron.up.chevron.down",
+                                  pointSize: 13,
+                                  weight: .medium,
+                                  color: Palette.secondaryText,
+                                  accessibilityDescription: nil)
+        searchSortPill.addSubview(sortChevronView)
+
+        sortPopUpButton.cell = QueueTransparentPopUpButtonCell(textCell: "", pullsDown: false)
         sortPopUpButton.font = .systemFont(ofSize: 10.5, weight: .regular)
         sortPopUpButton.bezelStyle = .rounded
+        sortPopUpButton.isBordered = false
         sortPopUpButton.target = self
         sortPopUpButton.action = #selector(sortModeChanged)
         sortPopUpButton.toolTip = "Queue sort order"
@@ -253,12 +294,15 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
             sortPopUpButton.lastItem?.tag = mode.rawValue
         }
         updateSortControlSelection()
-        headerView.addSubview(sortPopUpButton)
+        searchSortPill.addSubview(sortPopUpButton)
 
+        searchField.cell = QueueSearchFieldCell(textCell: "")
+        searchField.isEditable = true
         searchField.placeholderString = "Search queue"
         searchField.font = .systemFont(ofSize: 11)
         searchField.textColor = Palette.primaryText
         searchField.backgroundColor = NSColor.white.withAlphaComponent(0.10)
+        searchField.isBordered = false
         searchField.focusRingType = .none
         searchField.delegate = self
         searchField.target = self
@@ -267,11 +311,13 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
         searchField.sendsWholeSearchString = false
         searchField.toolTip = "Search queue filenames"
         searchField.setAccessibilityLabel("Search queue")
-        headerView.addSubview(searchField)
+        searchSortPill.searchField = searchField
+        searchSortPill.addSubview(searchField)
 
         bookmarkFilterButton.isBordered = false
         bookmarkFilterButton.bezelStyle = .regularSquare
-        bookmarkFilterButton.imageScaling = .scaleProportionallyDown
+        bookmarkFilterButton.symbolPointSize = 13
+        bookmarkFilterButton.symbolWeight = .medium
         bookmarkFilterButton.target = self
         bookmarkFilterButton.action = #selector(bookmarkFilterTapped)
         bookmarkFilterButton.setButtonType(.toggle)
@@ -282,11 +328,9 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
 
         closeButton.isBordered     = false
         closeButton.bezelStyle     = .regularSquare
-        closeButton.imageScaling   = .scaleProportionallyDown
-        let xCfg = NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)
-        if let img = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close Queue") {
-            closeButton.image = img.withSymbolConfiguration(xCfg) ?? img
-        }
+        closeButton.symbolName     = "xmark"
+        closeButton.symbolPointSize = 10
+        closeButton.symbolWeight   = .medium
         closeButton.contentTintColor = Palette.secondaryText
         closeButton.toolTip          = "Close Queue"
         closeButton.setAccessibilityLabel("Close Queue")
@@ -468,6 +512,16 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
         deleteButton.action    = #selector(deleteTapped)
         bottomBar.addSubview(deleteButton)
 
+        prefixPill.wantsLayer = true
+        prefixPill.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.10).cgColor
+        prefixPill.layer?.cornerRadius = 12
+        prefixPill.isHidden = true
+        bottomBar.addSubview(prefixPill)
+
+        prefixPillDivider.wantsLayer = true
+        prefixPillDivider.layer?.backgroundColor = Palette.separator.cgColor
+        prefixPill.addSubview(prefixPillDivider)
+
         // Primary custom-prefix button — matches the playback bar's prefix control.
         customPrefixButton.isBordered     = false
         customPrefixButton.bezelStyle     = .regularSquare
@@ -479,7 +533,7 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
         customPrefixButton.target           = self
         customPrefixButton.action           = #selector(customPrefixTapped)
         customPrefixButton.isHidden         = true
-        bottomBar.addSubview(customPrefixButton)
+        prefixPill.addSubview(customPrefixButton)
 
         // Secondary custom-prefix button.
         customPrefixSecondaryButton.isBordered     = false
@@ -492,7 +546,26 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
         customPrefixSecondaryButton.target           = self
         customPrefixSecondaryButton.action           = #selector(customPrefixSecondaryTapped)
         customPrefixSecondaryButton.isHidden         = true
-        bottomBar.addSubview(customPrefixSecondaryButton)
+        prefixPill.addSubview(customPrefixSecondaryButton)
+
+        footerPrefixSeparator.wantsLayer = true
+        footerPrefixSeparator.layer?.backgroundColor = Palette.separator.cgColor
+        bottomBar.addSubview(footerPrefixSeparator)
+
+        rescanButton.isBordered     = false
+        rescanButton.bezelStyle     = .regularSquare
+        rescanButton.font           = .systemFont(ofSize: 11.5, weight: .regular)
+        rescanButton.title          = "Rescan"
+        rescanButton.contentTintColor = Palette.secondaryText
+        rescanButton.toolTip        = "Rescan Folder — refresh the queue from current folder contents on disk"
+        rescanButton.setAccessibilityLabel("Rescan Folder")
+        rescanButton.target         = self
+        rescanButton.action         = #selector(rescanTapped)
+        bottomBar.addSubview(rescanButton)
+
+        footerClearSeparator.wantsLayer = true
+        footerClearSeparator.layer?.backgroundColor = Palette.separator.cgColor
+        bottomBar.addSubview(footerClearSeparator)
 
         removeAllButton.isBordered   = false
         removeAllButton.bezelStyle   = .regularSquare
@@ -533,7 +606,7 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
 
     // MARK: - Layout constants
 
-    private let headerH:    CGFloat = 68
+    private let headerH:    CGFloat = 48
     private let colHeaderH: CGFloat = 20
     private let bottomH:    CGFloat = 36
 
@@ -543,38 +616,88 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
 
         // Header
         headerView.frame = NSRect(x: 0, y: b.height - headerH, width: b.width, height: headerH)
-        let headerRowH: CGFloat = 28
-        let headerRowY = headerH - headerRowH
-        let closeX = b.width - headerRowH + 6
-        let sortWidth: CGFloat = 158
-        let sortHeight: CGFloat = 20
-        sortPopUpButton.frame = NSRect(x: max(92, closeX - sortWidth - 10),
-                                       y: headerRowY + centeredY(height: sortHeight, in: headerRowH),
-                                       width: sortWidth,
-                                       height: sortHeight)
-        // Title sits on the same leading inset as the File column header label and row
-        // cells, so the top of the page reads as a single content edge.
-        let titleHeight = ceil(titleLabel.intrinsicContentSize.height)
-        titleLabel.frame = NSRect(x: Self.cellLeadingPadding,
-                                  y: headerRowY + centeredY(height: titleHeight, in: headerRowH),
-                                  width: max(0, sortPopUpButton.frame.minX - Self.cellLeadingPadding - 8),
-                                  height: titleHeight)
-        let searchInset: CGFloat = 12
-        let filterSize: CGFloat = 24
-        let filterGap: CGFloat = 8
-        bookmarkFilterButton.frame = NSRect(x: b.width - searchInset - filterSize,
-                                            y: 6,
-                                            width: filterSize,
-                                            height: filterSize)
-        searchField.frame = NSRect(x: searchInset,
-                                   y: 6,
-                                   width: max(0, bookmarkFilterButton.frame.minX - filterGap - searchInset),
-                                   height: 24)
-        let closeSize = headerRowH - 10
-        closeButton.frame = NSRect(x: closeX,
-                                   y: headerRowY + centeredY(height: closeSize, in: headerRowH),
+        let headerAxisY = headerView.bounds.midY
+        let edgePad: CGFloat = 10
+        let interItemGap: CGFloat = 8
+        let queueTitleToPillGap: CGFloat = 12
+        let queueTitleTrailingSafety: CGFloat = 5
+        let closeSize: CGFloat = 22
+        let bookmarkSize: CGFloat = 24
+        closeButton.frame = NSRect(x: max(edgePad, b.width - edgePad - closeSize),
+                                   y: floor(headerAxisY - closeSize / 2),
                                    width: closeSize,
                                    height: closeSize)
+        bookmarkFilterButton.frame = NSRect(x: max(edgePad, closeButton.frame.minX - interItemGap - bookmarkSize),
+                                            y: floor(headerAxisY - bookmarkSize / 2),
+                                            width: bookmarkSize,
+                                            height: bookmarkSize)
+
+        let titlePreferredWidth = ceil(titleLabel.intrinsicContentSize.width) + queueTitleTrailingSafety
+        let titleAvailableWidth = max(0, bookmarkFilterButton.frame.minX - interItemGap - edgePad)
+        let titleWidth = min(titlePreferredWidth, titleAvailableWidth)
+        let titleHeight = ceil(titleLabel.intrinsicContentSize.height)
+        titleLabel.frame = NSRect(x: edgePad,
+                                  y: floor(headerAxisY - titleHeight / 2),
+                                  width: titleWidth,
+                                  height: titleHeight)
+        let pillX = titleLabel.frame.maxX + queueTitleToPillGap
+        let pillRight = bookmarkFilterButton.frame.minX - interItemGap
+        let maxPillW = max(260, min(560, b.width * 0.66))
+        let pillW = max(0, min(pillRight - pillX, maxPillW))
+        let pillH: CGFloat = 30
+        searchSortPill.frame = NSRect(x: pillX,
+                                      y: floor(headerAxisY - pillH / 2),
+                                      width: pillW,
+                                      height: pillH)
+        searchSortPill.isHidden = pillW <= 0
+        let dividerH: CGFloat = 20
+        let innerPad: CGFloat = 9
+        let searchIconSlotWidth: CGFloat = 24
+        let searchFieldX = innerPad + searchIconSlotWidth + 1
+        let minimumSearchTextWidth: CGFloat = 72
+        let minimumSortWidth: CGFloat = 84
+        let sortWidth = min(CGFloat(122), max(minimumSortWidth, pillW * 0.34))
+        let sortVisible = pillW >= searchFieldX + minimumSearchTextWidth + 6 + sortWidth
+        let effectiveSortWidth = sortVisible ? sortWidth : 0
+        let dividerX = sortVisible ? max(0, pillW - effectiveSortWidth - 1) : pillW
+        let searchAreaWidth = sortVisible ? dividerX : pillW
+        searchSortPill.searchFocusRect = NSRect(x: 0,
+                                                y: 0,
+                                                width: max(0, searchAreaWidth),
+                                                height: pillH)
+        searchSortDivider.frame = NSRect(x: dividerX,
+                                         y: centeredY(height: dividerH, in: pillH),
+                                         width: 1,
+                                         height: dividerH)
+        searchSortDivider.isHidden = !sortVisible
+        searchIconView.frame = NSRect(x: innerPad,
+                                      y: 0,
+                                      width: searchIconSlotWidth,
+                                      height: pillH)
+        let searchFieldHeight: CGFloat = 22
+        searchField.frame = NSRect(x: searchFieldX,
+                                   y: centeredY(height: searchFieldHeight, in: pillH),
+                                   width: max(0, searchAreaWidth - searchFieldX - 5),
+                                   height: searchFieldHeight)
+        let sortHeight: CGFloat = 24
+        let sortFrame = NSRect(x: dividerX + 1,
+                               y: centeredY(height: sortHeight, in: pillH),
+                               width: max(0, effectiveSortWidth),
+                               height: sortHeight)
+        sortPopUpButton.isHidden = !sortVisible
+        sortTitleView.isHidden = !sortVisible
+        sortChevronView.isHidden = !sortVisible
+        sortPopUpButton.frame = sortFrame
+        let sortInnerPad: CGFloat = 12
+        let chevronSlotWidth: CGFloat = 22
+        sortChevronView.frame = NSRect(x: max(sortFrame.minX, sortFrame.maxX - chevronSlotWidth),
+                                       y: sortFrame.minY,
+                                       width: min(chevronSlotWidth, sortFrame.width),
+                                       height: sortFrame.height)
+        sortTitleView.frame = NSRect(x: sortFrame.minX + sortInnerPad,
+                                     y: sortFrame.minY,
+                                     width: max(0, sortChevronView.frame.minX - sortFrame.minX - sortInnerPad - 4),
+                                     height: sortFrame.height)
 
         topSeparator.frame = NSRect(x: 0, y: b.height - headerH - 1, width: b.width, height: 1)
 
@@ -596,43 +719,93 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
         bottomBar.frame = NSRect(x: 0, y: 0, width: b.width, height: bottomH)
         let btnSz: CGFloat = 24
         let buttonY = centeredY(height: btnSz, in: bottomH)
-        deleteButton.frame  = NSRect(x: 10, y: buttonY, width: btnSz, height: btnSz)
-        var nextX: CGFloat = 42
+        let bottomEdgePad: CGFloat = 10
         let spacing: CGFloat = 8
-        if !customPrefixButton.isHidden {
-            let pBtnW = Self.queuePrefixButtonWidth(for: customPrefixButton.attributedTitle.string)
+        let separatorGap: CGFloat = 12
+        deleteButton.frame  = NSRect(x: bottomEdgePad, y: buttonY, width: btnSz, height: btnSz)
+        var nextX: CGFloat = deleteButton.frame.maxX + spacing
+        let primaryPrefixVisible = !customPrefixButton.isHidden
+        let secondaryPrefixVisible = !customPrefixSecondaryButton.isHidden
+        if primaryPrefixVisible || secondaryPrefixVisible {
             let pBtnH: CGFloat = 24
-            customPrefixButton.frame = NSRect(x: nextX,
-                                               y: centeredY(height: pBtnH, in: bottomH),
-                                               width: pBtnW,
-                                               height: pBtnH)
-            nextX += pBtnW + spacing
+            let primaryW = primaryPrefixVisible
+                ? Self.queuePrefixButtonWidth(for: customPrefixButton.attributedTitle.string)
+                : 0
+            let secondaryW = secondaryPrefixVisible
+                ? Self.queuePrefixButtonWidth(for: customPrefixSecondaryButton.attributedTitle.string)
+                : 0
+            let dividerW: CGFloat = (primaryPrefixVisible && secondaryPrefixVisible) ? 1 : 0
+            let pillW = primaryW + dividerW + secondaryW
+            prefixPill.isHidden = false
+            prefixPill.frame = NSRect(x: nextX,
+                                      y: centeredY(height: pBtnH, in: bottomH),
+                                      width: pillW,
+                                      height: pBtnH)
+            customPrefixButton.frame = primaryPrefixVisible
+                ? NSRect(x: 0, y: 0, width: primaryW, height: pBtnH)
+                : .zero
+            prefixPillDivider.isHidden = dividerW == 0
+            prefixPillDivider.frame = dividerW == 0
+                ? .zero
+                : NSRect(x: primaryW,
+                         y: centeredY(height: 16, in: pBtnH),
+                         width: dividerW,
+                         height: 16)
+            customPrefixSecondaryButton.frame = secondaryPrefixVisible
+                ? NSRect(x: primaryW + dividerW, y: 0, width: secondaryW, height: pBtnH)
+                : .zero
+            nextX = prefixPill.frame.maxX + spacing
+        } else {
+            prefixPill.isHidden = true
+            prefixPill.frame = .zero
+            prefixPillDivider.isHidden = true
+            prefixPillDivider.frame = .zero
+            customPrefixButton.frame = .zero
+            customPrefixSecondaryButton.frame = .zero
         }
-        if !customPrefixSecondaryButton.isHidden {
-            let pBtnW = Self.queuePrefixButtonWidth(for: customPrefixSecondaryButton.attributedTitle.string)
-            let pBtnH: CGFloat = 24
-            customPrefixSecondaryButton.frame = NSRect(x: nextX,
-                                                        y: centeredY(height: pBtnH, in: bottomH),
-                                                        width: pBtnW,
-                                                        height: pBtnH)
-            nextX += pBtnW + spacing
-        }
+
+        footerPrefixSeparator.isHidden = false
+        footerPrefixSeparator.frame = NSRect(x: nextX + separatorGap - spacing,
+                                             y: centeredY(height: 18, in: bottomH),
+                                             width: 1,
+                                             height: 18)
+        nextX = footerPrefixSeparator.frame.maxX + separatorGap
+
+        let rescanW: CGFloat = 72
+        let rescanH: CGFloat = 24
+        rescanButton.frame = NSRect(x: nextX,
+                                    y: centeredY(height: rescanH, in: bottomH),
+                                    width: rescanW,
+                                    height: rescanH)
+        rescanButton.isEnabled = !items.isEmpty
+        nextX += rescanW + spacing
+
         let removeAllW: CGFloat = 92
         let removeAllH: CGFloat = 24
-        removeAllButton.frame   = NSRect(x: max(nextX, b.width - removeAllW - 10),
+        removeAllButton.frame   = NSRect(x: max(nextX, b.width - removeAllW - bottomEdgePad),
                                          y: centeredY(height: removeAllH, in: bottomH),
                                          width: removeAllW,
                                          height: removeAllH)
         removeAllButton.isEnabled = !items.isEmpty
+        let clearSeparatorX = removeAllButton.frame.minX - separatorGap
+        let availableBetweenRescanAndClear = clearSeparatorX - nextX - spacing
+        let totalPreferredW = ceil(totalDurationLabel.intrinsicContentSize.width)
+        let showTotalDuration = availableBetweenRescanAndClear >= max(totalPreferredW, 86)
+        footerClearSeparator.isHidden = !showTotalDuration
+        footerClearSeparator.frame = showTotalDuration
+            ? NSRect(x: clearSeparatorX,
+                     y: centeredY(height: 18, in: bottomH),
+                     width: 1,
+                     height: 18)
+            : .zero
         let labX = nextX
-        // Anchor the total-duration label to the same text right edge the Size
-        // column uses when visible; otherwise use the table content right edge.
-        let totalRightEdge = removeAllButton.frame.minX - spacing
+        let totalRightEdge = showTotalDuration ? footerClearSeparator.frame.minX - spacing : labX
         let totalHeight = ceil(totalDurationLabel.intrinsicContentSize.height)
         totalDurationLabel.frame = NSRect(x: labX,
                                           y: centeredY(height: totalHeight, in: bottomH),
                                           width: max(0, totalRightEdge - labX),
                                           height: totalHeight)
+        totalDurationLabel.isHidden = !showTotalDuration
 
     }
 
@@ -1076,8 +1249,8 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
             if prevPairs.isEmpty {
                 visibleRows.append(.section("No previous"))
             } else {
-                // Most-recent item closest to NOW PLAYING (reversed)
-                prevPairs.reversed().forEach { visibleRows.append(.item(displayIndex: $0.0, item: $0.1)) }
+                // Chronological top-to-bottom; newest previous item lands closest to NOW PLAYING.
+                prevPairs.forEach { visibleRows.append(.item(displayIndex: $0.0, item: $0.1)) }
             }
         }
 
@@ -1239,6 +1412,10 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
         return max(70, textWidth + 16)
     }
 
+    @objc private func rescanTapped() {
+        delegate?.queuePageDidRequestRescan(self)
+    }
+
     @objc private func removeAllTapped() {
         delegate?.queuePageDidRequestRemoveAll(self)
     }
@@ -1264,10 +1441,7 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
 
     private func updateBookmarkFilterButton() {
         let symbol = bookmarkFilterEnabled ? "bookmark.fill" : "bookmark"
-        let cfg = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-        if let img = NSImage(systemSymbolName: symbol, accessibilityDescription: "Bookmark filter") {
-            bookmarkFilterButton.image = img.withSymbolConfiguration(cfg) ?? img
-        }
+        bookmarkFilterButton.symbolName = symbol
         bookmarkFilterButton.contentTintColor = bookmarkFilterEnabled ? Palette.accent : Palette.secondaryText
         bookmarkFilterButton.state = bookmarkFilterEnabled ? .on : .off
         bookmarkFilterButton.toolTip = bookmarkFilterEnabled ? "Showing bookmarked queue files" : "Show bookmarked queue files"
@@ -1277,6 +1451,7 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
     private func updateSortControlSelection() {
         isUpdatingSortControl = true
         sortPopUpButton.selectItem(withTag: currentSortMode.rawValue)
+        sortTitleView.stringValue = sortPopUpButton.titleOfSelectedItem ?? "Sort: \(currentSortMode.title)"
         isUpdatingSortControl = false
     }
 
@@ -1769,6 +1944,245 @@ private final class QueuePageRowView: NSTableRowView {
 }
 
 // MARK: - Native Queue Table Header
+
+private final class QueueSearchSortPillView: NSView {
+    weak var searchField: NSSearchField?
+    var searchFocusRect: NSRect = .zero
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if searchFocusRect.contains(point),
+           let searchField = searchField,
+           !searchField.isHidden,
+           searchField.frame.width > 0 {
+            window?.makeFirstResponder(searchField)
+            return
+        }
+        super.mouseDown(with: event)
+    }
+}
+
+private final class QueuePassthroughView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+}
+
+private final class QueueSearchFieldCell: NSSearchFieldCell {
+    private let textLeading: CGFloat = 0
+    private let textTrailing: CGFloat = 6
+
+    override init(textCell string: String) {
+        super.init(textCell: string)
+        // NSCell.init(textCell:) creates a non-editable label cell; restore editability.
+        isEditable = true
+        usesSingleLineMode = true
+        isScrollable = true
+        lineBreakMode = .byClipping
+    }
+
+    required init(coder: NSCoder) { fatalError() }
+
+    override func searchButtonRect(forBounds rect: NSRect) -> NSRect {
+        .zero
+    }
+
+    override func searchTextRect(forBounds rect: NSRect) -> NSRect {
+        let x = rect.minX + textLeading
+        let width = max(0, rect.maxX - x - textTrailing)
+        let font = self.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let textHeight = ceil(font.ascender - font.descender + font.leading)
+        return NSRect(x: x,
+                      y: rect.minY + floor((rect.height - textHeight) / 2),
+                      width: width,
+                      height: textHeight)
+    }
+
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        searchTextRect(forBounds: rect)
+    }
+
+    override func edit(withFrame rect: NSRect,
+                       in controlView: NSView,
+                       editor textObj: NSText,
+                       delegate: Any?,
+                       event: NSEvent?) {
+        super.edit(withFrame: searchTextRect(forBounds: rect),
+                   in: controlView,
+                   editor: textObj,
+                   delegate: delegate,
+                   event: event)
+    }
+
+    override func select(withFrame rect: NSRect,
+                         in controlView: NSView,
+                         editor textObj: NSText,
+                         delegate: Any?,
+                         start selStart: Int,
+                         length selLength: Int) {
+        super.select(withFrame: searchTextRect(forBounds: rect),
+                     in: controlView,
+                     editor: textObj,
+                     delegate: delegate,
+                     start: selStart,
+                     length: selLength)
+    }
+}
+
+private final class QueueTransparentPopUpButtonCell: NSPopUpButtonCell {
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView) {}
+    override func drawInterior(withFrame cellFrame: NSRect, in controlView: NSView) {}
+}
+
+private final class QueueHeaderSymbolButton: NSButton {
+    private let symbolView = QueueCenteredSymbolView()
+
+    var symbolName: String? {
+        get { symbolView.symbolName }
+        set { symbolView.symbolName = newValue }
+    }
+
+    var symbolPointSize: CGFloat {
+        get { symbolView.pointSize }
+        set { symbolView.pointSize = newValue }
+    }
+
+    var symbolWeight: NSFont.Weight {
+        get { symbolView.weight }
+        set { symbolView.weight = newValue }
+    }
+
+    override var contentTintColor: NSColor? {
+        didSet {
+            symbolView.color = contentTintColor ?? QueuePageView.Palette.secondaryText
+        }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        title = ""
+        isBordered = false
+        image = nil
+        symbolView.color = contentTintColor ?? QueuePageView.Palette.secondaryText
+        addSubview(symbolView)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        symbolView.frame = bounds
+    }
+}
+
+private final class QueueCenteredSymbolView: NSView {
+    var symbolName: String? {
+        didSet { rebuildImage() }
+    }
+    var pointSize: CGFloat = 13 {
+        didSet { rebuildImage() }
+    }
+    var weight: NSFont.Weight = .regular {
+        didSet { rebuildImage() }
+    }
+    var color: NSColor = .labelColor {
+        didSet { needsDisplay = true }
+    }
+    private var symbolImage: NSImage?
+
+    func configure(symbolName: String,
+                   pointSize: CGFloat,
+                   weight: NSFont.Weight,
+                   color: NSColor,
+                   accessibilityDescription: String?) {
+        self.pointSize = pointSize
+        self.weight = weight
+        self.color = color
+        self.symbolName = symbolName
+        setAccessibilityElement(accessibilityDescription != nil)
+        if let accessibilityDescription {
+            setAccessibilityLabel(accessibilityDescription)
+        }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let symbolImage else { return }
+        let alignmentRect = symbolImage.alignmentRect
+        let drawOrigin = NSPoint(x: bounds.midX - alignmentRect.midX,
+                                 y: bounds.midY - alignmentRect.midY)
+        let drawRect = NSRect(origin: drawOrigin, size: symbolImage.size)
+        symbolImage.draw(in: drawRect,
+                         from: .zero,
+                         operation: .sourceOver,
+                         fraction: 1.0,
+                         respectFlipped: true,
+                         hints: nil)
+        color.setFill()
+        drawRect.fill(using: .sourceAtop)
+    }
+
+    private func rebuildImage() {
+        guard let symbolName,
+              let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) else {
+            symbolImage = nil
+            needsDisplay = true
+            return
+        }
+        let configuration = NSImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
+        symbolImage = image.withSymbolConfiguration(configuration) ?? image
+        symbolImage?.isTemplate = true
+        needsDisplay = true
+    }
+}
+
+private final class QueueCenteredTextView: NSView {
+    var stringValue: String = "" {
+        didSet { needsDisplay = true }
+    }
+    var font: NSFont = .systemFont(ofSize: 10.5, weight: .regular) {
+        didSet { needsDisplay = true }
+    }
+    var textColor: NSColor = .labelColor {
+        didSet { needsDisplay = true }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        paragraph.alignment = .left
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: textColor,
+            .paragraphStyle: paragraph
+        ]
+        let textHeight = ceil(font.ascender - font.descender + font.leading)
+        let textRect = NSRect(x: 0,
+                              y: bounds.minY + floor((bounds.height - textHeight) / 2),
+                              width: bounds.width,
+                              height: textHeight)
+        (stringValue as NSString).draw(in: textRect, withAttributes: attrs)
+    }
+}
 
 private final class LockedHorizontalClipView: NSClipView {
     override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
