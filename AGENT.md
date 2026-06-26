@@ -7,7 +7,7 @@ This file must be listed first in the read-first section of every AI assistant p
 ## Project Identity
 
 - **Name:** dwb player
-- **Version at last write:** 4.1.2 (build 412)
+- **Version at last write:** 4.2.2 (build 4.2.2)
 - **Language:** Swift
 - **Frameworks:** AppKit, VLCKit (via `tylerjonesio/vlckit-spm` through Swift Package Manager)
 - **Platform:** macOS 13+
@@ -33,6 +33,7 @@ This file must be listed first in the read-first section of every AI assistant p
 - Do not write titlebar chrome changes inside `windowDidResize`. That method body must remain: log + `layoutPlayerViews()` only.
 - Transport controls, bottom rail, and Queue Page layout follow the patterns established through P38. Do not restructure view hierarchy unless a future prompt explicitly requests it.
 - Settings window must remain normal-level and independently movable. When visible, Settings should stay ordered above dwb player windows using normal AppKit ordering. Do not use global floating level for Settings; it must be allowed to go behind other applications.
+- Public-facing app naming must remain uniform as `dwb player` in menus, bundle/display names, settings/about copy, and default player-window titles unless a future prompt explicitly renames the app.
 
 ---
 
@@ -45,6 +46,7 @@ Preserve the following behavior unless a future pass explicitly changes it:
 - Stop-to-Queue-Page flow
 - Paused-near-end completion handling
 - Top-insert behavior for explicitly opened or dropped files
+- Folder import and explicit queue name-sorting must use Finder-style natural filename ordering based on display filenames, preserving deterministic tie-breaks and existing manual queue behavior.
 - Image/GIF slideshow playback (via AppKit/NSImage, not VLCKit)
 - Volume persistence via `persistedVolume` / UserDefaults
 - Fullscreen and windowed layout behavior
