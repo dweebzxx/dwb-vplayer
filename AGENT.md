@@ -1,6 +1,6 @@
 # AGENT.md — dwb player
 
-This file must be listed first in the read-first section of every AI assistant prompt and read at the start of every AI assistant pass. Neither Codex nor Claude auto-reads `AGENT.md`. It encodes stable project constraints that apply to all future implementation, documentation, and workflow passes.
+This file must be listed first in the read-first section of every AI assistant prompt and read at the start of every AI assistant pass. Codex, Claude, and Antigravity CLI/agy do not reliably auto-read `AGENT.md`, so `AGENT.md` must be listed first in every prompt and read at the start of every pass. It encodes stable project constraints that apply to all future implementation, documentation, and workflow passes.
 
 ---
 
@@ -234,7 +234,15 @@ If any required item cannot be completed safely, document the incomplete item an
 
 ## Notes for Future Passes
 
-- Always include AGENT.md first in the read-first list. Neither Codex nor Claude auto-reads it.
+- Always include AGENT.md first in the read-first list. Neither Codex, Claude, nor Antigravity CLI/agy reliably auto-reads it.
 - The `build-report-logs/` directory is git-ignored. Its contents are local only and must not be committed.
 - The `dist/` directory is git-ignored. Build output is local only.
 - `scripts/build-app.sh` is the canonical build entry point. Do not invoke `xcodebuild` directly unless the script itself is being modified.
+
+### Supported Code Agent Launch Notes
+
+- Standard workflow prompts remain saved to `$AI_PROMPT_PATH`; launchers may preload them to clipboard for interactive sessions or pass them with a documented agy prompt flag when the launcher explicitly supports that mode.
+- For agy, required-tool preflight should include `agy`; launch PATH must include `$HOME/.local/bin` before starting the session.
+- Before using an agy model override, run `agy models` and use an exact locally available model name.
+- agy no-approval mode is `--dangerously-skip-permissions`; use only inside the project-root workflow launcher.
+- agy configuration lives outside the repo; do not modify `~/.gemini/antigravity-cli/settings.json` during a normal project pass unless a future prompt explicitly authorizes machine-local tooling setup.
