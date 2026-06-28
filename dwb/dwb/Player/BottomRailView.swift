@@ -119,11 +119,7 @@ final class BottomRailView: NSView {
         repeatButton.isHidden          = !SettingsWindowController.isBottomRailShowReplayEnabled()
         volumeButton.isHidden          = !SettingsWindowController.isBottomRailShowVolumeEnabled()
         bookmarkButton.isHidden        = !SettingsWindowController.isBottomRailShowBookmarkEnabled()
-        // Rebuild any open More popover so visibility changes take effect live.
-        if let popover = moreMenuPopover, popover.isShown {
-            popover.performClose(nil)
-            moreMenuPopover = nil
-        }
+        // NSMenu dismisses automatically on visibility or settings changes via system dismiss.
         applySkipDurationSettings()
         invalidateCachedDisplayState()
         needsLayout = true
@@ -372,8 +368,8 @@ final class BottomRailView: NSView {
         configure(volumeButton, symbol: "speaker.wave.2.fill", label: "Mute or Unmute", help: "Mute / Unmute", action: #selector(volumeTapped), size: 12)
         configure(shuffleButton, symbol: "shuffle", label: "Shuffle", help: "Shuffle", action: #selector(shuffleTapped), size: 11)
         configure(repeatButton, symbol: "repeat", label: "Repeat Current File", help: "Repeat current file", action: #selector(repeatTapped), size: 11)
-        configure(bookmarkButton, symbol: "bookmark", label: "Bookmark", help: "Bookmark (B)", action: #selector(bookmarkTapped), size: 11)
-        configure(moreButton, symbol: nil, label: "More", help: "More actions", action: #selector(moreTapped), title: "...")
+        configure(bookmarkButton, symbol: "bookmark", label: "Bookmark", help: "Bookmark (B)", action: #selector(bookmarkTapped), style: .bookmark, size: 11)
+        configure(moreButton, symbol: nil, label: "More Actions", help: "More actions overflow menu", action: #selector(moreTapped), title: "...")
         configure(settingsButton, symbol: "gearshape", label: "Settings", help: "Settings (⌘,)", action: #selector(settingsTapped), size: 11)
         configure(fullscreenButton, symbol: "arrow.up.left.and.arrow.down.right", label: "Toggle Fullscreen", help: "Toggle Fullscreen", action: #selector(fullscreenTapped), size: 11)
 
@@ -586,15 +582,7 @@ final class BottomRailView: NSView {
     @objc private func settingsTapped() { SettingsWindowController.shared.openSettings() }
     @objc private func fullscreenTapped() { window?.toggleFullScreen(nil) }
 
-    private var moreMenuPopover: NSPopover?
-
     @objc private func moreTapped() {
-        if let existing = moreMenuPopover, existing.isShown {
-            existing.performClose(nil)
-            moreMenuPopover = nil
-            return
-        }
-
         let shuffleEnabled = (controller?.playbackSet.count ?? 0) > 1
         let shuffleOn = (controller?.isShuffleOn ?? false) || (controller?.isEndlessShuffleOn ?? false)
         let renameEnabled = controller?.canRenameCurrentMedia == true
@@ -608,52 +596,57 @@ final class BottomRailView: NSView {
         let hasPrimary = BottomRailView.hasConfiguredPrefix(primary)
         let hasDistinctSecondary = BottomRailView.hasDistinctSecondaryPrefix(primary: primary, secondary: secondary)
 
-        // Show each action in More when its dedicated rail button is hidden,
-        // whether from Settings being off or narrow-width responsive hiding.
-        // Controls that are visible on the bar are not duplicated here.
-        // Secondary prefix follows the same More fallback when configured and distinct.
-        var items: [MoreMenuItem] = []
+        // Use NSMenu so overflow actions are natively accessible to VoiceOver and
+        // keyboard-only users. NSMenuItem exposes role, label, state, and activation
+        // through AppKit's built-in accessibility and keyboard navigation automatically.
+        // Show each action when its dedicated rail button is hidden (Settings off or
+        // narrow-width responsive hiding). Visible rail buttons are not duplicated.
+        let menu = NSMenu(title: "More Actions")
+        menu.autoenablesItems = false
+
+        func addItem(title: String, action: MoreMenuAction, isOn: Bool, isEnabled: Bool) {
+            let item = NSMenuItem(title: title, action: #selector(handleMoreMenuAction(_:)), keyEquivalent: "")
+            item.target = self
+            item.state = isOn ? .on : .off
+            item.isEnabled = isEnabled
+            item.representedObject = action
+            menu.addItem(item)
+        }
+
         if hasPrimary && (dPrefixButton.isHidden || !showPrefixButtons) {
-            let primaryTitle = BottomRailView.railPrefixLabel(primary)
-            items.append(MoreMenuItem(title: primaryTitle, action: .customPrefix, isOn: false, isEnabled: renameEnabled))
+            addItem(title: BottomRailView.railPrefixLabel(primary), action: .customPrefix, isOn: false, isEnabled: renameEnabled)
         }
         if hasDistinctSecondary && (secondaryPrefixButton.isHidden || !showPrefixButtons) {
-            let secondaryTitle = BottomRailView.railPrefixLabel(secondary)
-            items.append(MoreMenuItem(title: secondaryTitle, action: .customPrefixSecondary, isOn: false, isEnabled: renameEnabled))
+            addItem(title: BottomRailView.railPrefixLabel(secondary), action: .customPrefixSecondary, isOn: false, isEnabled: renameEnabled)
         }
         if shuffleButton.isHidden {
-            items.append(MoreMenuItem(title: "Shuffle",  action: .shuffle,      isOn: shuffleOn,    isEnabled: shuffleEnabled))
+            addItem(title: "Shuffle",   action: .shuffle,   isOn: shuffleOn,    isEnabled: shuffleEnabled)
         }
         if repeatButton.isHidden {
-            items.append(MoreMenuItem(title: "Replay",   action: .replay,       isOn: isRepeat,     isEnabled: true))
+            addItem(title: "Replay",    action: .replay,    isOn: isRepeat,     isEnabled: true)
         }
         if bookmarkButton.isHidden {
-            items.append(MoreMenuItem(title: "Bookmark", action: .bookmark,     isOn: isBookmarked, isEnabled: hasItem))
+            addItem(title: "Bookmark",  action: .bookmark,  isOn: isBookmarked, isEnabled: hasItem)
         }
-        // Settings is always present in the More menu and always last so it
-        // stays reachable even when every dedicated button is visible.
-        items.append(MoreMenuItem(title: "Settings",     action: .settings,     isOn: false,        isEnabled: true))
+        // Settings is always last so it stays reachable even when every dedicated button is visible.
+        addItem(title: "Settings", action: .settings, isOn: false, isEnabled: true)
 
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.animates = true
-        popover.appearance = NSAppearance(named: .darkAqua)
-        let content = MoreMenuViewController(items: items)
-        content.onSelect = { [weak self, weak popover] action in
-            popover?.performClose(nil)
-            guard let self else { return }
-            switch action {
-            case .customPrefix:          self.controller?.performCustomPrefixRenameCurrentItem()
-            case .customPrefixSecondary: self.controller?.performSecondaryCustomPrefixRenameCurrentItem(source: "bottomRail-more")
-            case .shuffle:               self.controller?.toggleShuffle()
-            case .replay:                self.controller?.toggleRepeat()
-            case .bookmark:              self.controller?.toggleBookmark()
-            case .settings:              SettingsWindowController.shared.openSettings()
-            }
+        // Anchor above the more button; AppKit adjusts for screen edges automatically.
+        menu.popUp(positioning: nil,
+                   at: NSPoint(x: moreButton.frame.minX, y: moreButton.frame.maxY),
+                   in: self)
+    }
+
+    @objc private func handleMoreMenuAction(_ sender: NSMenuItem) {
+        guard let action = sender.representedObject as? MoreMenuAction else { return }
+        switch action {
+        case .customPrefix:          controller?.performCustomPrefixRenameCurrentItem()
+        case .customPrefixSecondary: controller?.performSecondaryCustomPrefixRenameCurrentItem(source: "bottomRail-more")
+        case .shuffle:               controller?.toggleShuffle()
+        case .replay:                controller?.toggleRepeat()
+        case .bookmark:              controller?.toggleBookmark()
+        case .settings:              SettingsWindowController.shared.openSettings()
         }
-        popover.contentViewController = content
-        moreMenuPopover = popover
-        popover.show(relativeTo: moreButton.bounds, of: moreButton, preferredEdge: .maxY)
     }
 
 
@@ -676,121 +669,10 @@ final class BottomRailView: NSView {
     }
 }
 
-// MARK: - More menu (popover)
+// MARK: - More menu
 
 fileprivate enum MoreMenuAction {
     case customPrefix, customPrefixSecondary, shuffle, replay, bookmark, settings
-}
-
-fileprivate struct MoreMenuItem {
-    let title: String
-    let action: MoreMenuAction
-    let isOn: Bool
-    let isEnabled: Bool
-}
-
-/// Lightweight popover content that mirrors the rail's dark/translucent chrome so the
-/// More menu reads as an extension of the playback bar rather than a stock system menu.
-fileprivate final class MoreMenuViewController: NSViewController {
-    private let items: [MoreMenuItem]
-    var onSelect: ((MoreMenuAction) -> Void)?
-
-    init(items: [MoreMenuItem]) {
-        self.items = items
-        super.init(nibName: nil, bundle: nil)
-    }
-    required init?(coder: NSCoder) { fatalError("programmatic only") }
-
-    override func loadView() {
-        let rowH: CGFloat = 28
-        let topPad: CGFloat = 6
-        let botPad: CGFloat = 6
-        let width: CGFloat = 168
-        let height = rowH * CGFloat(items.count) + topPad + botPad
-
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
-        root.wantsLayer = true
-        root.layer?.backgroundColor = NSColor.clear.cgColor
-
-        // Subtle dark wash on top of the popover's native vibrant chrome so the
-        // background matches the rail veil's translucency.
-        let darken = NSView(frame: root.bounds)
-        darken.wantsLayer = true
-        darken.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.28).cgColor
-        darken.autoresizingMask = [.width, .height]
-        root.addSubview(darken)
-
-        for (i, item) in items.enumerated() {
-            let rowY = height - topPad - CGFloat(i + 1) * rowH
-            let row = MoreMenuRowView(title: item.title, showCheck: item.isOn, enabled: item.isEnabled)
-            row.frame = NSRect(x: 0, y: rowY, width: width, height: rowH)
-            row.autoresizingMask = [.width]
-            row.onClick = { [weak self] in self?.onSelect?(item.action) }
-            root.addSubview(row)
-        }
-
-        preferredContentSize = NSSize(width: width, height: height)
-        view = root
-    }
-}
-
-fileprivate final class MoreMenuRowView: NSView {
-    private let titleText: String
-    private let showCheck: Bool
-    private let enabledRow: Bool
-    var onClick: (() -> Void)?
-    private var tracking: NSTrackingArea?
-
-    init(title: String, showCheck: Bool, enabled: Bool) {
-        self.titleText = title
-        self.showCheck = showCheck
-        self.enabledRow = enabled
-        super.init(frame: .zero)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.clear.cgColor
-    }
-    required init?(coder: NSCoder) { fatalError("programmatic only") }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(rect: bounds,
-                                  options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-                                  owner: self, userInfo: nil)
-        addTrackingArea(area)
-        tracking = area
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        guard enabledRow else { return }
-        layer?.backgroundColor = NSColor.white.withAlphaComponent(0.14).cgColor
-    }
-    override func mouseExited(with event: NSEvent) {
-        layer?.backgroundColor = NSColor.clear.cgColor
-    }
-    override func mouseDown(with event: NSEvent) {
-        guard enabledRow else { return }
-        onClick?()
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let color: NSColor = enabledRow
-            ? NSColor.white.withAlphaComponent(0.94)
-            : NSColor.white.withAlphaComponent(0.38)
-        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
-        let titleStr = titleText as NSString
-        let titleSize = titleStr.size(withAttributes: attrs)
-        let titleY = (bounds.height - titleSize.height) / 2
-        titleStr.draw(at: NSPoint(x: 14, y: titleY), withAttributes: attrs)
-        if showCheck {
-            let check = "✓" as NSString
-            let cSize = check.size(withAttributes: attrs)
-            let cX = bounds.width - 14 - cSize.width
-            let cY = (bounds.height - cSize.height) / 2
-            check.draw(at: NSPoint(x: cX, y: cY), withAttributes: attrs)
-        }
-    }
 }
 
 // MARK: - Top-aligned knobless slider cell

@@ -147,7 +147,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                                    message: "windowCapDenied: context=\(context) cap=\(maxPlayerWindowCount) current=\(windowControllers.count)")
         let alert = NSAlert()
         alert.messageText = "Window limit reached"
-        alert.informativeText = "dwb supports up to \(maxPlayerWindowCount) player windows."
+        alert.informativeText = "dwb player supports up to \(maxPlayerWindowCount) player windows."
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
         if let sheetWindow = NSApp.keyWindow ?? NSApp.mainWindow {
@@ -363,7 +363,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return frontPlayerWindowController?.canRenameCurrentMedia == true
         case 12: // Remove from Queue
             return frontPlayerWindowController?.currentMediaURL != nil
-        case 13: // Delete All Queue Items
+        case 13: // Clear Queue
             return frontPlayerWindowController != nil
         case 20: // Shuffle
             menuItem.state = frontPlayerWindowController?.isShuffleOn == true ? .on : .off
@@ -420,10 +420,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         // ── App menu ────────────────────────────────────────────────────────
         let appItem = NSMenuItem()
+        appItem.title = "dwb player"
         mainMenu.addItem(appItem)
-        let appMenu = NSMenu()
+        let appMenu = NSMenu(title: "dwb player")
         appItem.submenu = appMenu
-        appMenu.addItem(withTitle: "About dwb",
+        appMenu.addItem(withTitle: "About dwb player",
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                         keyEquivalent: "")
         appMenu.addItem(.separator())
@@ -435,7 +436,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         appMenu.addItem(settingsItem)
 
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit dwb",
+        appMenu.addItem(withTitle: "Quit dwb player",
                         action: #selector(NSApplication.terminate(_:)),
                         keyEquivalent: "q")
 
@@ -477,7 +478,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         // AppKit represents Delete as NSDeleteCharacter for menu shortcuts.
         // The visible shortcut remains Command+Shift+Delete.
-        let deleteAllItem = NSMenuItem(title: "Delete All Queue Items",
+        let deleteAllItem = NSMenuItem(title: "Clear Queue",
                                        action: #selector(deleteAllQueueItems(_:)),
                                        keyEquivalent: String(UnicodeScalar(NSDeleteCharacter)!))
         deleteAllItem.keyEquivalentModifierMask = [.command, .shift]

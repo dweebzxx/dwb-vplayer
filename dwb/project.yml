@@ -35,8 +35,8 @@ targets:
     settings:
       base:
         INFOPLIST_FILE: dwb/Resources/Info.plist
-        MARKETING_VERSION: "4.1.2"
-        CURRENT_PROJECT_VERSION: "412"
+        MARKETING_VERSION: "4.2.2"
+        CURRENT_PROJECT_VERSION: "4.2.2"
         PRODUCT_BUNDLE_IDENTIFIER: com.dwb.dwb
         PRODUCT_NAME: "dwb player"
         ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: "YES"
@@ -45,3 +45,37 @@ targets:
     dependencies:
       - package: vlckit-spm
         product: VLCKitSPM
+
+  dwbTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: dwbTests
+      - path: dwb/Player/MediaFileSupportCore.swift
+      - path: dwb/Player/PlaybackCompletionPolicy.swift
+      - path: dwb/Player/QueueDisplayProjection.swift
+      - path: dwb/App/DebugLogSanitizer.swift
+      - path: dwb/App/BookmarkStore.swift
+      - path: dwb/App/SettingsDefaultsRegistry.swift
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
+        PRODUCT_BUNDLE_IDENTIFIER: com.dwb.dwbTests
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGNING_ALLOWED: "NO"
+        DEVELOPMENT_TEAM: ""
+
+schemes:
+  dwb:
+    build:
+      targets:
+        dwb: all
+
+  dwbTests:
+    build:
+      targets:
+        dwbTests: all
+    test:
+      targets:
+        - dwbTests

@@ -1,5 +1,19 @@
 import Cocoa
 
+enum PlayerBrandColors {
+    // Periwinkle (#4C62A8): brand accent for bookmark and active states.
+    static let periwinkle = NSColor(calibratedRed: 76.0 / 255.0,
+                                    green: 98.0 / 255.0,
+                                    blue: 168.0 / 255.0,
+                                    alpha: 1.0)
+
+    // Crimson (#B03828): reserved brand status color for destructive actions.
+    static let crimson = NSColor(calibratedRed: 176.0 / 255.0,
+                                 green: 56.0 / 255.0,
+                                 blue: 40.0 / 255.0,
+                                 alpha: 1.0)
+}
+
 enum PrefixBrandColors {
     // Brand color system categorical mapping for dark graphite UI:
     // Primary custom prefix = Dark Teal 500 (#488FA0).
@@ -57,6 +71,7 @@ final class RailButton: NSButton {
         case utility
         case prefixPrimary
         case prefixSecondary
+        case bookmark
         case warning
     }
 
@@ -171,6 +186,10 @@ final class RailButton: NSButton {
             hoverFill   = 0.16
             hoverBorder = 0.20
             tint = PrefixBrandColors.secondaryCustomPrefixColor
+        case .bookmark:
+            hoverFill   = 0.16
+            hoverBorder = 0.20
+            tint = PlayerBrandColors.periwinkle
         case .warning:
             hoverFill   = 0.18
             hoverBorder = 0.22

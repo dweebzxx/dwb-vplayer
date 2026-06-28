@@ -68,13 +68,14 @@ struct PlaybackSpeedOption: Equatable {
 class PlayerWindowController: NSWindowController {
 
     private static var nextDebugOrdinal = 1
+    private static let defaultWindowTitle = "dwb player"
 
     private(set) var player: VLCMediaPlayer!
     private var videoSurface: VideoSurfaceView!
     private var transport: TransportControlsView!
     private var volumeBar: VolumeBarView!
     private var queuePage: QueuePageView!
-    private let centeredTitleLabel = NSTextField(labelWithString: "dwb")
+    private let centeredTitleLabel = NSTextField(labelWithString: PlayerWindowController.defaultWindowTitle)
     private let debugOrdinal: Int
 
     var debugIdentity: String { "player-\(debugOrdinal)" }
@@ -194,6 +195,8 @@ class PlayerWindowController: NSWindowController {
     /// Used by the Rescan Folder action to re-enumerate folder contents.
     /// Cleared when the queue is fully replaced or removed.
     private var sourceFolderURLs: [URL] = []
+    private var folderScanGeneration: UInt64 = 0
+    private var folderScanTask: Task<Void, Never>?
 
     /// Current position in `displayOrder`. -1 when no set is loaded.
     private var currentDisplayIndex: Int = -1
@@ -233,14 +236,6 @@ class PlayerWindowController: NSWindowController {
     private(set) var isEndlessShuffleOn = false
 
     // MARK: - Auto-advance
-
-    private enum PlaybackCompletionAction: String {
-        case repeatCurrent
-        case playNext
-        case endlessShuffleNext
-        case stopLastItem
-        case ignoredUserStop
-    }
 
     private enum PlaybackTransitionStrategy: String {
         case reuseCurrentPlayer = "reuse-current-player"
@@ -441,7 +436,7 @@ class PlayerWindowController: NSWindowController {
                            styleMask: style,
                            backing: .buffered,
                            defer: false)
-        win.title = "dwb"
+        win.title = Self.defaultWindowTitle
         win.minSize = NSSize(width: 480, height: 180 + transportHeight)
         win.center()
         win.isReleasedWhenClosed = false
@@ -489,7 +484,7 @@ class PlayerWindowController: NSWindowController {
         self.window = win
         win.delegate = self
         installCenteredTitleLabel(in: win)
-        updateWindowTitle("dwb")
+        updateWindowTitle(Self.defaultWindowTitle)
         applyWindowOpacity(reason: "initial-window", force: true)
 
         applyWindowedChromeModeIfNeeded()
@@ -1103,6 +1098,7 @@ class PlayerWindowController: NSWindowController {
 
     /// Convenience: sets a one-item playback set.
     func play(url: URL) {
+        cancelPendingFolderScan()
         sourceFolderURLs = []
         openAndPlay(set: [url])
     }
@@ -1296,9 +1292,9 @@ class PlayerWindowController: NSWindowController {
         case .manual:
             return 0
         case .filenameAscending:
-            return compareStrings(queueFilenameSortKey(for: lhsURL), queueFilenameSortKey(for: rhsURL))
+            return compareQueueFilenames(lhsURL, rhsURL, ascending: true)
         case .filenameDescending:
-            return compareStrings(queueFilenameSortKey(for: rhsURL), queueFilenameSortKey(for: lhsURL))
+            return compareQueueFilenames(lhsURL, rhsURL, ascending: false)
         case .fileSizeAscending:
             return compareIntegers(queueFileSizeSortKey(for: lhsURL), queueFileSizeSortKey(for: rhsURL))
         case .fileSizeDescending:
@@ -1307,6 +1303,22 @@ class PlayerWindowController: NSWindowController {
             return compareDurationKeys(lhsURL, rhsURL, ascending: true)
         case .durationDescending:
             return compareDurationKeys(lhsURL, rhsURL, ascending: false)
+        }
+    }
+
+    private func compareQueueFilenames(_ lhsURL: URL?, _ rhsURL: URL?, ascending: Bool) -> Int {
+        switch (lhsURL, rhsURL) {
+        case let (lhs?, rhs?):
+            let result = MediaFileSupport.compareFinderNaturalFilenames(lhs, rhs)
+            if result == .orderedSame { return 0 }
+            let ascendingResult = result == .orderedAscending ? -1 : 1
+            return ascending ? ascendingResult : -ascendingResult
+        case (nil, nil):
+            return 0
+        case (nil, _?):
+            return ascending ? -1 : 1
+        case (_?, nil):
+            return ascending ? 1 : -1
         }
     }
 
@@ -1328,20 +1340,10 @@ class PlayerWindowController: NSWindowController {
         }
     }
 
-    private func compareStrings(_ lhs: String, _ rhs: String) -> Int {
-        if lhs < rhs { return -1 }
-        if lhs > rhs { return 1 }
-        return 0
-    }
-
     private func compareIntegers(_ lhs: Int64, _ rhs: Int64) -> Int {
         if lhs < rhs { return -1 }
         if lhs > rhs { return 1 }
         return 0
-    }
-
-    private func queueFilenameSortKey(for url: URL?) -> String {
-        url?.lastPathComponent.lowercased() ?? ""
     }
 
     private func queueFileSizeSortKey(for url: URL?) -> Int64 {
@@ -1542,6 +1544,7 @@ class PlayerWindowController: NSWindowController {
     }
 
     func removeAllQueueItems(source: String = "menu") {
+        cancelPendingFolderScan()
         guard !playbackSet.isEmpty || !displayOrder.isEmpty else { return }
         NSLog("[dwb-playback] removeAll: source=%@ clearing entire queue (count=%d)", source, playbackSet.count)
         DebugConsoleController.log("queue", "removeAll: source=\(source) count=\(playbackSet.count)")
@@ -1574,7 +1577,7 @@ class PlayerWindowController: NSWindowController {
         durationSecondsCache.removeAll()
         queueSortMode                = .manual
 
-        updateWindowTitle("dwb")
+        updateWindowTitle(Self.defaultWindowTitle)
         transport.update()
         if isQueuePageOpen { refreshQueuePage() }
         logPlaybackQueueSnapshot("removeAll")
@@ -1604,7 +1607,7 @@ class PlayerWindowController: NSWindowController {
             currentDisplayIndex = -1
             currentMediaURL = nil
             currentDurationIsProvisional = false
-            updateWindowTitle("dwb")
+            updateWindowTitle(Self.defaultWindowTitle)
             transport.update()
             if isQueuePageOpen { refreshQueuePage() }
             logPlaybackQueueSnapshot("queueDelete-empty")
@@ -1725,6 +1728,8 @@ class PlayerWindowController: NSWindowController {
     // MARK: - Drop / open URL handling
 
     func handleDroppedURLs(_ urls: [URL], appendingExplicitFiles: Bool = true) {
+        guard !urls.isEmpty else { return }
+
         var dirs:  [URL] = []
         var files: [URL] = []
 
@@ -1734,28 +1739,23 @@ class PlayerWindowController: NSWindowController {
             if isDir.boolValue { dirs.append(url) } else { files.append(url) }
         }
 
+        let acceptedKinds = SettingsWindowController.acceptedMediaKinds()
+
+        guard !dirs.isEmpty else {
+            cancelPendingFolderScan()
+            let result = MediaFileSupport.expandToSupportedMedia(urls, acceptedKinds: acceptedKinds)
+            applyExpandedMediaIntake(result: result,
+                                     dirs: dirs,
+                                     appendingExplicitFiles: appendingExplicitFiles)
+            return
+        }
+
         // Folders-only: single-folder drop inserts at top of existing queue (or replaces if empty).
         // Multi-folder selections fall through to the shared expansion path below.
         if !dirs.isEmpty && files.isEmpty {
             if dirs.count == 1 {
                 let folder = dirs[0]
-                let result = MediaFileSupport.expandToSupportedMedia(
-                    [folder],
-                    acceptedKinds: SettingsWindowController.acceptedMediaKinds()
-                )
-                guard !result.media.isEmpty else {
-                    showEmptyIntakeMessage(result: result,
-                                           unsupportedMessage: "No supported media files found in \"\(folder.lastPathComponent)\".")
-                    return
-                }
-                let queueEmpty = playbackSet.isEmpty || displayOrder.isEmpty
-                if queueEmpty {
-                    sourceFolderURLs = [folder]
-                    openAndPlay(set: result.media)
-                } else {
-                    trackSourceFolder(folder)
-                    appendToQueue(files: result.media)
-                }
+                startAsyncSingleFolderIntake(folder: folder, acceptedKinds: acceptedKinds)
                 return
             }
         }
@@ -1765,10 +1765,105 @@ class PlayerWindowController: NSWindowController {
         // preserving top-level selection order (folders expand in-place, sorted).
         // Supports any number of folders. No dedupe is applied here; this preserves
         // the existing queue-ingestion semantics for explicit repeated selections.
-        let result = MediaFileSupport.expandToSupportedMedia(
-            urls,
-            acceptedKinds: SettingsWindowController.acceptedMediaKinds()
-        )
+        startAsyncExpandedMediaIntake(urls: urls,
+                                      dirs: dirs,
+                                      appendingExplicitFiles: appendingExplicitFiles,
+                                      acceptedKinds: acceptedKinds)
+    }
+
+    private func startAsyncSingleFolderIntake(folder: URL,
+                                             acceptedKinds: Set<MediaFileSupport.MediaKind>) {
+        let generation = beginFolderScanOperation()
+        DebugConsoleController.log("queue", "expandAsync: start singleFolder=\(folder.lastPathComponent)")
+
+        folderScanTask = Task.detached(priority: .userInitiated) { [weak self] in
+            do {
+                let result = try MediaFileSupport.expandToSupportedMedia(
+                    [folder],
+                    acceptedKinds: acceptedKinds,
+                    shouldCancel: { Task.isCancelled }
+                )
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard let self, self.folderScanGeneration == generation else { return }
+                    self.folderScanTask = nil
+                    self.applySingleFolderIntake(folder: folder, result: result)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                await MainActor.run {
+                    guard let self, self.folderScanGeneration == generation else { return }
+                    self.folderScanTask = nil
+                    DebugConsoleController.log(level: .error,
+                                               category: "queue",
+                                               message: "expandAsync failed: \(error.localizedDescription)")
+                    self.showDropError("Could not scan \"\(folder.lastPathComponent)\".",
+                                       title: "Unable to Open Folder")
+                }
+            }
+        }
+    }
+
+    private func startAsyncExpandedMediaIntake(urls: [URL],
+                                               dirs: [URL],
+                                               appendingExplicitFiles: Bool,
+                                               acceptedKinds: Set<MediaFileSupport.MediaKind>) {
+        let generation = beginFolderScanOperation()
+        DebugConsoleController.log("queue", "expandAsync: start urls=\(urls.count) folders=\(dirs.count)")
+
+        folderScanTask = Task.detached(priority: .userInitiated) { [weak self] in
+            do {
+                let result = try MediaFileSupport.expandToSupportedMedia(
+                    urls,
+                    acceptedKinds: acceptedKinds,
+                    shouldCancel: { Task.isCancelled }
+                )
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard let self, self.folderScanGeneration == generation else { return }
+                    self.folderScanTask = nil
+                    self.applyExpandedMediaIntake(result: result,
+                                                  dirs: dirs,
+                                                  appendingExplicitFiles: appendingExplicitFiles)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                await MainActor.run {
+                    guard let self, self.folderScanGeneration == generation else { return }
+                    self.folderScanTask = nil
+                    DebugConsoleController.log(level: .error,
+                                               category: "queue",
+                                               message: "expandAsync failed: \(error.localizedDescription)")
+                    self.showDropError("Could not scan the selected folders.",
+                                       title: "Unable to Open Folder")
+                }
+            }
+        }
+    }
+
+    private func applySingleFolderIntake(folder: URL,
+                                         result: MediaFileSupport.ExpansionResult) {
+        guard !result.media.isEmpty else {
+            showEmptyIntakeMessage(result: result,
+                                   unsupportedMessage: "No supported media files found in \"\(folder.lastPathComponent)\".")
+            return
+        }
+
+        let queueEmpty = playbackSet.isEmpty || displayOrder.isEmpty
+        if queueEmpty {
+            sourceFolderURLs = [folder]
+            openAndPlay(set: result.media)
+        } else {
+            trackSourceFolder(folder)
+            appendToQueue(files: result.media)
+        }
+    }
+
+    private func applyExpandedMediaIntake(result: MediaFileSupport.ExpansionResult,
+                                          dirs: [URL],
+                                          appendingExplicitFiles: Bool) {
         let expanded = result.media
         let emptyFolders = result.emptyFolderNames
 
@@ -1834,6 +1929,19 @@ class PlayerWindowController: NSWindowController {
 
         showDropError(unsupportedMessage ?? "No supported media files found.",
                       title: "Nothing to Play")
+    }
+
+    @discardableResult
+    private func beginFolderScanOperation() -> UInt64 {
+        folderScanTask?.cancel()
+        folderScanGeneration &+= 1
+        return folderScanGeneration
+    }
+
+    private func cancelPendingFolderScan() {
+        folderScanTask?.cancel()
+        folderScanTask = nil
+        folderScanGeneration &+= 1
     }
 
     // MARK: - Sleep prevention
@@ -2855,10 +2963,13 @@ class PlayerWindowController: NSWindowController {
     }
 
     private func completionActionForCurrentState() -> PlaybackCompletionAction {
-        if isRepeatOne { return .repeatCurrent }
-        if currentDisplayIndex < displayOrder.count - 1 { return .playNext }
-        if isEndlessShuffleOn && !playbackSet.isEmpty { return .endlessShuffleNext }
-        return .stopLastItem
+        PlaybackCompletionPolicy(
+            isRepeatOne: isRepeatOne,
+            currentDisplayIndex: currentDisplayIndex,
+            displayOrderCount: displayOrder.count,
+            isEndlessShuffleOn: isEndlessShuffleOn,
+            queueIsEmpty: playbackSet.isEmpty
+        ).action
     }
 
     private func updatePlaybackProgressSnapshot(position: Float? = nil) {
@@ -2903,7 +3014,7 @@ class PlayerWindowController: NSWindowController {
                                           sourceSessionID: currentPlaybackSessionID)
         activeCompletionSequence = sequence
 
-        NSLog("[dwb-playback] completionDecision: source=%@ action=%@ seq=%d media=%@ session=%d eof=%@",
+        NSLog("[dwb-playback] completionDecision: source=%@ action=%@ seq=%d media=%@ session=%d eof=%@ transition=reuse-current-player",
               source,
               action.rawValue,
               sequence.id,
@@ -2918,7 +3029,7 @@ class PlayerWindowController: NSWindowController {
                 self?.playCurrentItem(startReason: "autoplay-repeat",
                                       expectPlaybackHandshake: true,
                                       preserveCompletionSequence: true,
-                                      transitionStrategy: .freshPlayer)
+                                      transitionStrategy: .reuseCurrentPlayer)
             }
         case .playNext, .endlessShuffleNext:
             let nextReason: String
@@ -2934,7 +3045,7 @@ class PlayerWindowController: NSWindowController {
                 let advanced = self.advanceToNextItem(reason: nextReason,
                                                       expectPlaybackHandshake: true,
                                                       preserveCompletionSequence: true,
-                                                      transitionStrategy: .freshPlayer)
+                                                      transitionStrategy: .reuseCurrentPlayer)
                 if !advanced {
                     self.clearCompletionSequence(reason: "completion-no-next")
                 }
@@ -3435,6 +3546,7 @@ class PlayerWindowController: NSWindowController {
     // MARK: - Window close
 
     override func close() {
+        cancelPendingFolderScan()
         resetPlaybackCompletionSignals(reason: "window-close")
         if currentItemIsImage {
             clearImageSlideshowState()
@@ -3451,6 +3563,7 @@ class PlayerWindowController: NSWindowController {
 extension PlayerWindowController: NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
+        cancelPendingFolderScan()
         resetPlaybackCompletionSignals(reason: "window-will-close")
         releasePlaybackSleepAssertion()
         stopUpdateTimer()
@@ -3920,39 +4033,7 @@ extension PlayerWindowController: QueuePageViewDelegate {
             DebugConsoleController.log("rename", "customPrefix: noop (empty prefix) source=queuePage")
             return
         }
-        // Collect (playbackSetIndex, newURL) pairs and preflight all collisions first.
-        var renames: [(pbIdx: Int, newURL: URL)] = []
-        for displayIdx in indices {
-            guard displayIdx >= 0, displayIdx < displayOrder.count else { continue }
-            let pbIdx = displayOrder[displayIdx]
-            guard pbIdx >= 0, pbIdx < playbackSet.count else { continue }
-            let url = playbackSet[pbIdx]
-            let stem = url.deletingPathExtension().lastPathComponent
-            if stem.hasPrefix(prefix) {
-                DebugConsoleController.log("rename", "customPrefix: noop (already prefixed) file=\(url.lastPathComponent) source=queuePage")
-                continue
-            }
-            let ext = url.pathExtension
-            let newName = ext.isEmpty ? "\(prefix)\(stem)" : "\(prefix)\(stem).\(ext)"
-            let newURL = url.deletingLastPathComponent().appendingPathComponent(newName)
-            if FileManager.default.fileExists(atPath: newURL.path) {
-                DebugConsoleController.log(level: .warning, category: "rename", message: "customPrefix: collision for \(newName) — aborting all renames")
-                if let win = window {
-                    let alert = NSAlert()
-                    alert.messageText = "Cannot Rename"
-                    alert.informativeText = "A file named \"\(newName)\" already exists. No files were renamed."
-                    alert.alertStyle = .warning
-                    alert.addButton(withTitle: "OK")
-                    alert.beginSheetModal(for: win)
-                }
-                return
-            }
-            renames.append((pbIdx: pbIdx, newURL: newURL))
-        }
-        for r in renames {
-            DebugConsoleController.log("rename", "customPrefix: \(playbackSet[r.pbIdx].lastPathComponent) → \(r.newURL.lastPathComponent) source=queuePage")
-            renameFile(at: r.pbIdx, to: r.newURL.lastPathComponent)
-        }
+        performQueuePagePrefixRename(indices: indices, prefix: prefix, tag: "customPrefix")
     }
 
     func queuePage(_ view: QueuePageView, didRequestSecondaryCustomPrefixRenameAt indices: [Int]) {
@@ -3961,37 +4042,91 @@ extension PlayerWindowController: QueuePageViewDelegate {
             DebugConsoleController.log("rename", "customPrefixSecondary: noop (empty prefix) source=queuePage")
             return
         }
-        var renames: [(pbIdx: Int, newURL: URL)] = []
+        performQueuePagePrefixRename(indices: indices, prefix: prefix, tag: "customPrefixSecondary")
+    }
+
+    /// Shared implementation for queue-page prefix rename (primary and secondary).
+    ///
+    /// Runs a full preflight via `MediaFileSupport.planPrefixRenames` before any
+    /// filesystem mutation. Single-file renames proceed immediately; multi-file
+    /// renames require explicit confirmation.
+    private func performQueuePagePrefixRename(indices: [Int], prefix: String, tag: String) {
+        guard let win = window else { return }
+
+        // Resolve display indices to (pbIdx, url) pairs.
+        var targets: [(pbIdx: Int, url: URL)] = []
         for displayIdx in indices {
             guard displayIdx >= 0, displayIdx < displayOrder.count else { continue }
             let pbIdx = displayOrder[displayIdx]
             guard pbIdx >= 0, pbIdx < playbackSet.count else { continue }
-            let url = playbackSet[pbIdx]
-            let stem = url.deletingPathExtension().lastPathComponent
-            if stem.hasPrefix(prefix) {
-                DebugConsoleController.log("rename", "customPrefixSecondary: noop (already prefixed) file=\(url.lastPathComponent) source=queuePage")
-                continue
+            targets.append((pbIdx: pbIdx, url: playbackSet[pbIdx]))
+        }
+        guard !targets.isEmpty else { return }
+
+        // Preflight: plan all renames atomically before mutating any file.
+        let planResult = MediaFileSupport.planPrefixRenames(
+            urls: targets.map(\.url),
+            prefix: prefix
+        )
+
+        switch planResult {
+        case .failure(let failure):
+            let message: String
+            switch failure {
+            case .missingSource(let filename):
+                message = "The file \"\(filename)\" could not be found. No files were renamed."
+            case .invalidNewName(let original):
+                message = "A new filename for \"\(original)\" would be invalid. No files were renamed."
+            case .destinationCollision(let newName):
+                message = "A file named \"\(newName)\" already exists. No files were renamed."
+            case .duplicateDestination(let newName):
+                message = "Two selected files would produce the same destination name \"\(newName)\". No files were renamed."
             }
-            let ext = url.pathExtension
-            let newName = ext.isEmpty ? "\(prefix)\(stem)" : "\(prefix)\(stem).\(ext)"
-            let newURL = url.deletingLastPathComponent().appendingPathComponent(newName)
-            if FileManager.default.fileExists(atPath: newURL.path) {
-                DebugConsoleController.log(level: .warning, category: "rename", message: "customPrefixSecondary: collision for \(newName) — aborting all renames")
-                if let win = window {
-                    let alert = NSAlert()
-                    alert.messageText = "Cannot Rename"
-                    alert.informativeText = "A file named \"\(newName)\" already exists. No files were renamed."
-                    alert.alertStyle = .warning
-                    alert.addButton(withTitle: "OK")
-                    alert.beginSheetModal(for: win)
-                }
+            DebugConsoleController.log(level: .warning, category: "rename",
+                                       message: "\(tag): preflight failed — \(message)")
+            presentRenameAlert(title: "Cannot Rename", message: message, window: win)
+
+        case .success(let planned):
+            guard !planned.isEmpty else {
+                DebugConsoleController.log("rename", "\(tag): all targets already prefixed, noop source=queuePage")
                 return
             }
-            renames.append((pbIdx: pbIdx, newURL: newURL))
-        }
-        for r in renames {
-            DebugConsoleController.log("rename", "customPrefixSecondary: \(playbackSet[r.pbIdx].lastPathComponent) → \(r.newURL.lastPathComponent) source=queuePage")
-            renameFile(at: r.pbIdx, to: r.newURL.lastPathComponent)
+
+            // Map source path → pbIdx for post-confirmation execution.
+            let srcPathToPbIdx = Dictionary(
+                uniqueKeysWithValues: targets.map { ($0.url.standardizedFileURL.path, $0.pbIdx) }
+            )
+            let pendingRenames: [(pbIdx: Int, newName: String)] = planned.compactMap { p in
+                guard let pbIdx = srcPathToPbIdx[p.sourceURL.standardizedFileURL.path] else { return nil }
+                return (pbIdx: pbIdx, newName: p.destinationURL.lastPathComponent)
+            }
+            guard !pendingRenames.isEmpty else { return }
+
+            if pendingRenames.count == 1 {
+                // Single-file fast path: no confirmation required.
+                let r = pendingRenames[0]
+                DebugConsoleController.log("rename",
+                    "\(tag): \(playbackSet[r.pbIdx].lastPathComponent) → \(r.newName) source=queuePage")
+                renameFile(at: r.pbIdx, to: r.newName)
+            } else {
+                // Multi-file: show confirmation before any filesystem mutation.
+                let count = pendingRenames.count
+                let alert = NSAlert()
+                alert.messageText = "Rename \(count) Files?"
+                alert.informativeText = "Applying prefix \"\(prefix)\" will rename \(count) files on disk. This cannot be undone from within the app."
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "Rename \(count) Files")
+                alert.addButton(withTitle: "Cancel")
+                alert.beginSheetModal(for: win) { [weak self] response in
+                    guard response == .alertFirstButtonReturn, let self = self else { return }
+                    for r in pendingRenames {
+                        guard r.pbIdx < self.playbackSet.count else { continue }
+                        DebugConsoleController.log("rename",
+                            "\(tag): \(self.playbackSet[r.pbIdx].lastPathComponent) → \(r.newName) source=queuePage confirmed")
+                        self.renameFile(at: r.pbIdx, to: r.newName)
+                    }
+                }
+            }
         }
     }
 
@@ -4057,22 +4192,62 @@ extension PlayerWindowController: QueuePageViewDelegate {
             return
         }
 
-        // Enumerate fresh file list from all tracked folders (no cross-folder duplicates).
-        var freshURLs: [URL] = []
-        var freshPaths = Set<String>()
-        for folder in foldersToScan {
-            let files = MediaFileSupport.sortedSupportedFiles(
-                inFolder: folder,
-                acceptedKinds: SettingsWindowController.acceptedMediaKinds()
-            )
-            for url in files {
-                let path = url.standardizedFileURL.path
-                if freshPaths.insert(path).inserted {
-                    freshURLs.append(url)
+        startAsyncFolderRescan(foldersToScan: foldersToScan,
+                               acceptedKinds: SettingsWindowController.acceptedMediaKinds())
+    }
+
+    private func startAsyncFolderRescan(foldersToScan: [URL],
+                                        acceptedKinds: Set<MediaFileSupport.MediaKind>) {
+        let generation = beginFolderScanOperation()
+        DebugConsoleController.log("rescan", "rescanAsync: start folders=\(foldersToScan.count)")
+
+        folderScanTask = Task.detached(priority: .userInitiated) { [weak self] in
+            do {
+                var freshURLs: [URL] = []
+                var freshPaths = Set<String>()
+                for folder in foldersToScan {
+                    guard !Task.isCancelled else { throw CancellationError() }
+                    let files = try MediaFileSupport.sortedSupportedFiles(
+                        inFolder: folder,
+                        acceptedKinds: acceptedKinds,
+                        shouldCancel: { Task.isCancelled }
+                    )
+                    for url in files {
+                        let path = url.standardizedFileURL.path
+                        if freshPaths.insert(path).inserted {
+                            freshURLs.append(url)
+                        }
+                    }
+                }
+
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard let self, self.folderScanGeneration == generation else { return }
+                    self.folderScanTask = nil
+                    self.applyFolderRescan(freshURLs: freshURLs, freshPaths: freshPaths)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                await MainActor.run {
+                    guard let self, self.folderScanGeneration == generation else { return }
+                    self.folderScanTask = nil
+                    DebugConsoleController.log(level: .error,
+                                               category: "rescan",
+                                               message: "rescanAsync failed: \(error.localizedDescription)")
+                    let alert = NSAlert()
+                    alert.messageText = "Rescan Folder"
+                    alert.informativeText = "Could not rescan folder contents."
+                    alert.alertStyle = .warning
+                    alert.addButton(withTitle: "OK")
+                    if let window = self.window { alert.beginSheetModal(for: window) }
                 }
             }
         }
+    }
 
+    private func applyFolderRescan(freshURLs: [URL],
+                                   freshPaths: Set<String>) {
         // Capture the currently playing URL before modifying state.
         let playingURL: URL? = currentSetIndex >= 0 && currentSetIndex < playbackSet.count
             ? playbackSet[currentSetIndex]

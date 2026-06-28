@@ -8,8 +8,17 @@ identity="${DWB_SIGNING_IDENTITY:-}"
 adhoc=0
 timestamp=0
 verify_only=0
+release_mode=0
+hardened_runtime=0
+check_release_inputs=0
 
 if [[ "${DWB_SIGN_TIMESTAMP:-0}" == "1" ]]; then
+    timestamp=1
+fi
+
+if [[ "${DWB_RELEASE_SIGN:-0}" == "1" ]]; then
+    release_mode=1
+    hardened_runtime=1
     timestamp=1
 fi
 
@@ -23,10 +32,19 @@ Options:
   --adhoc              Sign with ad-hoc identity "-"
   --timestamp          Request timestamp signing for non-ad-hoc identities
   --no-timestamp       Disable timestamp signing
+  --hardened-runtime   Sign with codesign --options runtime
+  --no-hardened-runtime
+                       Disable codesign --options runtime
+  --release            Require Developer ID Application signing, Hardened Runtime,
+                       and timestamping
+  --check-release-inputs
+                       Validate release signing inputs and exit without signing
   --verify-only        Do not sign; only run verification checks
   --help               Show this help text
 
 If no identity is provided and --adhoc is not provided, ad-hoc signing is used.
+Public binary release signing must use --release or DWB_RELEASE_SIGN=1 with
+a Developer ID Application identity. Ad-hoc signing remains the local default.
 This script does not create, import, export, print, or delete certificates,
 private keys, keychains, credentials, or provisioning profiles.
 EOF
@@ -64,6 +82,28 @@ while [[ $# -gt 0 ]]; do
             timestamp=0
             shift
             ;;
+        --hardened-runtime)
+            hardened_runtime=1
+            shift
+            ;;
+        --no-hardened-runtime)
+            hardened_runtime=0
+            shift
+            ;;
+        --release)
+            release_mode=1
+            hardened_runtime=1
+            timestamp=1
+            adhoc=0
+            shift
+            ;;
+        --check-release-inputs)
+            check_release_inputs=1
+            release_mode=1
+            hardened_runtime=1
+            timestamp=1
+            shift
+            ;;
         --verify-only)
             verify_only=1
             shift
@@ -80,11 +120,51 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$identity" ]]; then
+identity_record=""
+
+find_identity_record() {
+    local requested_identity="$1"
+    /usr/bin/security find-identity -v -p codesigning 2>/dev/null \
+        | /usr/bin/grep -F "$requested_identity" \
+        | /usr/bin/head -1 || true
+}
+
+validate_release_identity() {
+    if [[ -z "$identity" || "$identity" == "-" ]]; then
+        printf "ERROR: Release signing requires DWB_SIGNING_IDENTITY or --identity with a Developer ID Application identity.\n" >&2
+        exit 1
+    fi
+
+    identity_record="$(find_identity_record "$identity")"
+    if [[ -z "$identity_record" ]]; then
+        printf "ERROR: Signing identity was not found in the local keychain search list.\n" >&2
+        printf "Provide an installed Developer ID Application identity via DWB_SIGNING_IDENTITY or --identity.\n" >&2
+        exit 1
+    fi
+
+    if [[ "$identity_record" != *"Developer ID Application:"* && "$identity" != Developer\ ID\ Application:* ]]; then
+        printf "ERROR: Release signing requires a Developer ID Application identity.\n" >&2
+        printf "The provided identity exists but is not a Developer ID Application certificate.\n" >&2
+        exit 1
+    fi
+}
+
+if [[ "$release_mode" -eq 1 ]]; then
+    validate_release_identity
+    adhoc=0
+elif [[ -z "$identity" ]]; then
     identity="-"
     adhoc=1
 elif [[ "$identity" == "-" ]]; then
     adhoc=1
+fi
+
+if [[ "$check_release_inputs" -eq 1 ]]; then
+    printf "Release signing input check passed.\n"
+    printf "Developer ID Application identity: present\n"
+    printf "Hardened Runtime option:          enabled\n"
+    printf "Timestamp mode:                   enabled\n"
+    exit 0
 fi
 
 if [[ "$adhoc" -eq 1 && "$timestamp" -eq 1 ]]; then
@@ -126,6 +206,13 @@ if [[ "$timestamp" -eq 1 ]]; then
     timestamp_args=(--timestamp)
 fi
 
+runtime_args=()
+runtime_label="disabled"
+if [[ "$hardened_runtime" -eq 1 ]]; then
+    runtime_args=(--options runtime)
+    runtime_label="enabled"
+fi
+
 printf "App path:        %s\n" "$app_path"
 if [[ "$adhoc" -eq 1 ]]; then
     printf "Identity:        ad-hoc (-)\n"
@@ -133,6 +220,12 @@ else
     printf "Identity:        %s\n" "$identity"
 fi
 printf "Timestamp mode:  %s\n" "$timestamp_label"
+printf "Hardened runtime:%s\n" "  $runtime_label"
+if [[ "$release_mode" -eq 1 ]]; then
+    printf "Release mode:    Developer ID Application required\n"
+else
+    printf "Release mode:    disabled\n"
+fi
 printf "App version:     %s\n" "$version"
 printf "Bundle version:  %s\n" "$build"
 
@@ -145,7 +238,7 @@ is_macho_file() {
 sign_one() {
     local target="$1"
     printf "Signing:         %s\n" "$target"
-    /usr/bin/codesign --force --sign "$identity" "${timestamp_args[@]}" "$target"
+    /usr/bin/codesign --force --sign "$identity" "${timestamp_args[@]}" "${runtime_args[@]}" "$target"
 }
 
 if [[ "$verify_only" -eq 0 ]]; then
@@ -187,7 +280,8 @@ else
 fi
 
 printf "\nCodesign details:\n"
-/usr/bin/codesign -dv --verbose=4 "$app_path" 2>&1 || true
+codesign_details="$(/usr/bin/codesign -dv --verbose=4 "$app_path" 2>&1 || true)"
+printf "%s\n" "$codesign_details"
 
 printf "\nspctl assessment:\n"
 if /usr/sbin/spctl -a -vv "$app_path" 2>&1; then
@@ -201,4 +295,15 @@ printf "spctl outcome:                %s\n" "$spctl_status"
 
 if [[ "$codesign_status" != "passed" ]]; then
     exit 1
+fi
+
+if [[ "$release_mode" -eq 1 ]]; then
+    if ! printf "%s\n" "$codesign_details" | /usr/bin/grep -q "Authority=Developer ID Application:"; then
+        printf "ERROR: Release signing verification did not show a Developer ID Application authority.\n" >&2
+        exit 1
+    fi
+    if ! printf "%s\n" "$codesign_details" | /usr/bin/grep -q "Runtime Version"; then
+        printf "ERROR: Release signing verification did not show Hardened Runtime.\n" >&2
+        exit 1
+    fi
 fi

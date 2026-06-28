@@ -44,11 +44,8 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
         static let primaryText = NSColor.white.withAlphaComponent(0.84)
         static let secondaryText = NSColor.white.withAlphaComponent(0.58)
         static let tertiaryText = NSColor.white.withAlphaComponent(0.42)
-        /// Suite accent #4C62A8 — matches dwb skim's DwbSkimProductSpec.accent.
-        static let accent = NSColor(calibratedRed: 76.0 / 255.0,
-                                    green: 98.0 / 255.0,
-                                    blue: 168.0 / 255.0,
-                                    alpha: 1.0)
+        /// Suite accent / brand Periwinkle #4C62A8.
+        static let accent = PlayerBrandColors.periwinkle
         static let currentText = NSColor.white
         static let currentFill = accent.withAlphaComponent(0.18)
         static let currentBar = accent
@@ -505,7 +502,7 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
         if let img = NSImage(systemSymbolName: "trash", accessibilityDescription: "Remove") {
             deleteButton.image = img.withSymbolConfiguration(trashCfg) ?? img
         }
-        deleteButton.contentTintColor = NSColor.systemRed.withAlphaComponent(0.70)
+        deleteButton.contentTintColor = PlayerBrandColors.crimson.withAlphaComponent(0.78)
         deleteButton.toolTip   = "Remove selected file(s) from queue"
         deleteButton.setAccessibilityLabel("Remove selected file(s) from queue")
         deleteButton.target    = self
@@ -571,7 +568,7 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
         removeAllButton.bezelStyle   = .regularSquare
         removeAllButton.font         = .systemFont(ofSize: 11.5, weight: .regular)
         removeAllButton.title        = "Clear Queue"
-        removeAllButton.contentTintColor = NSColor.systemRed.withAlphaComponent(0.78)
+        removeAllButton.contentTintColor = PlayerBrandColors.crimson.withAlphaComponent(0.88)
         removeAllButton.toolTip      = "Clear Queue"
         removeAllButton.setAccessibilityLabel("Clear Queue")
         removeAllButton.target       = self
@@ -1207,17 +1204,22 @@ final class QueuePageView: NSView, NSSearchFieldDelegate {
     private func applySearchFilter(preservingSelectedURLs selectedURLs: Set<URL>) {
         let query = currentSearchQuery
         let bookmarkedPaths = BookmarkStore.shared.bookmarkedPaths()
-        let pairs = items.enumerated().filter { _, item in
-            let matchesSearch = query.isEmpty
-                || item.displayName.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-            let matchesBookmark = !bookmarkFilterEnabled
-                || bookmarkedPaths.contains(item.url.standardizedFileURL.path)
-            return matchesSearch && matchesBookmark
-        }
+        let pairs = QueueDisplayProjection.filteredPairs(
+            from: items,
+            displayName: { $0.displayName },
+            urlPath: { $0.url.standardizedFileURL.path },
+            query: query,
+            bookmarkedPaths: bookmarkedPaths,
+            bookmarkFilterEnabled: bookmarkFilterEnabled
+        )
         visibleToDisplayIndices = pairs.map(\.0)
         visibleItems = pairs.map(\.1)
         rebuildVisibleRows(from: pairs)
-        allowsManualReorder = currentSortMode == .manual && query.isEmpty && !bookmarkFilterEnabled
+        allowsManualReorder = QueueDisplayProjection.allowsManualReorder(
+            isManualSort: currentSortMode == .manual,
+            query: query,
+            bookmarkFilterEnabled: bookmarkFilterEnabled
+        )
         updateTotalDurationLabel()
         tableView.reloadData()
         if !selectedURLs.isEmpty {

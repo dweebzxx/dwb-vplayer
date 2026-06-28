@@ -260,9 +260,10 @@ final class DebugConsoleController: NSWindowController {
     }
 
     @objc private func copyAllTapped() {
-        let text = entries.map { formatEntry($0) }.joined(separator: "\n")
+        let text = sanitizedText(entries.map { formatEntry($0) }.joined(separator: "\n"))
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+        showCopyFeedback()
     }
 
     @objc private func exportTapped() {
@@ -271,11 +272,20 @@ final class DebugConsoleController: NSWindowController {
         let safe = timeFormatter.string(from: Date())
             .replacingOccurrences(of: ":", with: "-")
             .replacingOccurrences(of: ".", with: "-")
-        panel.nameFieldStringValue = "dwb-debug-\(safe).txt"
+        panel.nameFieldStringValue = "dwb player debug-\(safe).txt"
         panel.begin { [weak self] result in
             guard result == .OK, let url = panel.url, let self = self else { return }
-            let text = self.entries.map { self.formatEntry($0) }.joined(separator: "\n")
-            try? text.write(to: url, atomically: true, encoding: .utf8)
+            let text = self.sanitizedText(self.entries.map { self.formatEntry($0) }.joined(separator: "\n"))
+            do {
+                try text.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Export Failed"
+                alert.informativeText = "The debug log could not be written to the selected location.\n\n\(error.localizedDescription)"
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
         }
     }
 
@@ -285,15 +295,37 @@ final class DebugConsoleController: NSWindowController {
         let pausedNote = isPaused ? " [PAUSED]" : ""
         let ts = timeFormatter.string(from: Date())
         var lines: [String] = [
-            "dwb Debug Snapshot — \(ts)",
+            "dwb player Debug Snapshot — \(ts)",
             "Buffer: \(total) entries, \(visible) visible\(pausedNote)",
             ""
         ]
         let recent = entries.suffix(20)
         lines.append("Last \(recent.count) of \(total) entries:")
         lines.append(contentsOf: recent.map { formatEntry($0) })
+        let text = sanitizedText(lines.joined(separator: "\n"))
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
+        NSPasteboard.general.setString(text, forType: .string)
+        showCopyFeedback()
+    }
+
+    // MARK: - Sanitization helpers
+
+    private func sanitizedText(_ raw: String) -> String {
+        let prefixes = [
+            SettingsWindowController.customPrefixValue(),
+            SettingsWindowController.customPrefixSecondaryValue()
+        ].filter { !$0.isEmpty }
+        return DebugLogSanitizer(prefixesToRedact: prefixes).sanitize(raw)
+    }
+
+    private func showCopyFeedback() {
+        statusLabel.stringValue = "Copied to clipboard (sanitized)"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self else { return }
+            if self.statusLabel.stringValue == "Copied to clipboard (sanitized)" {
+                self.updateStatus()
+            }
+        }
     }
 
     @objc private func categoryChanged(_ sender: NSPopUpButton) {
@@ -324,16 +356,20 @@ final class DebugConsoleController: NSWindowController {
     private init() {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 780, height: 480),
-            styleMask: [.titled, .closable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
-        panel.title = "dwb Debug Console"
+        panel.title = "dwb player Debug Console"
         panel.isReleasedWhenClosed = false
         panel.isFloatingPanel = false
         panel.level = .normal
         panel.hidesOnDeactivate = false
         panel.minSize = NSSize(width: 500, height: 300)
+        [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].forEach { buttonType in
+            panel.standardWindowButton(buttonType)?.isHidden = false
+            panel.standardWindowButton(buttonType)?.isEnabled = true
+        }
         super.init(window: panel)
         buildUI()
         isEnabled = SettingsWindowController.isDebugConsoleEnabled()

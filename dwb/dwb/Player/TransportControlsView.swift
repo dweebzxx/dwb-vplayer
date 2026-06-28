@@ -1,21 +1,14 @@
 import Cocoa
 import VLCKitSPM
 
-/// Shared cinematic transport overlay used in both windowed and fullscreen presentations.
+/// Shared transport overlay used in both windowed and fullscreen presentations.
 ///
 /// Layout:
 ///   Bottom edge: full-width knobless timeline with centered time label.
-///   Lower third: frosted center pod with transport buttons.
-///   Bottom corners: Queue Page on the left, fullscreen on the right.
+///   Bottom rail: active playback, queue, bookmark, prefix, volume, and window controls.
 ///
-/// Always-visible controls: queuePageButton, rewind, prev, play/pause, next, forward,
-/// fullscreen, and the scrubber.
-///
-/// Optional controls (default hidden; toggled from Settings > Optional Controls):
-///   stop, volume, shuffle, repeat.
-///
-/// performLayout() skips space for hidden buttons, so the streamlined default set
-/// stays compact without gaps.
+/// The unified bottom rail is the only shipped control surface. Older pod subviews
+/// remain hidden so existing controller paths can delegate to BottomRailView.
 final class TransportControlsView: NSView {
 
     weak var player: VLCMediaPlayer? {
@@ -27,7 +20,7 @@ final class TransportControlsView: NSView {
 
     // MARK: - Subviews
 
-    private let effectView      = DraggableVisualEffectView()
+    private let effectView      = NSVisualEffectView()
     private let separator       = NSView()
     private let bottomRail      = BottomRailView()
 
@@ -40,7 +33,7 @@ final class TransportControlsView: NSView {
     private let forwardButton   = NSButton()
     private let nextButton      = NSButton()
 
-    // Optional controls — hidden by default; shown when Settings enables them
+    // Retained only for inactive legacy layout code; hidden while the bottom rail is active.
     private let stopButton      = NSButton()
     private let shuffleButton   = NSButton()
     private let repeatButton    = NSButton()
@@ -63,7 +56,7 @@ final class TransportControlsView: NSView {
     private(set) var isFullscreenStyle = false
     /// True while the user is pressing or dragging the scrubber.
     private var isScrubbing = false
-    private var useUnifiedBottomRail = UserDefaults.standard.bool(forKey: SettingsWindowController.useUnifiedBottomRailKey)
+    private let useUnifiedBottomRail = true
     private var railAutohideStarted = false
     private var railVisibilityGeneration = 0
     private lazy var railAutohideController = IdleAutohideController(
@@ -109,32 +102,6 @@ final class TransportControlsView: NSView {
     private var pendingSeekPosition: Float? = nil
     private var pendingSeekDate:     Date?  = nil
     private let pendingSeekTimeout: TimeInterval = 1.5
-    private enum ControlPodPlacementMode: String, CaseIterable {
-        case windowed
-        case fullscreen
-
-        var xDefaultsKey: String { "controlPodAnchorX.\(rawValue)" }
-        var yDefaultsKey: String { "controlPodAnchorY.\(rawValue)" }
-    }
-    private var controlPodAnchors: [ControlPodPlacementMode: CGPoint] = [:]
-    private var lastDisplayedPodAnchor: CGPoint?
-    private var currentPodFrame: NSRect = .zero
-    private var dragStartAnchor: CGPoint?
-
-    // MARK: - Control pod scale
-
-    /// Scale factor applied uniformly to pod geometry and corner-button sizes.
-    /// Default (smallest) = 1.0; max = 1.6; step = 0.2.
-    private(set) var controlPodScale: CGFloat = 1.0
-
-    private static let podScaleKey:  String  = "controlPodScale"
-    private static let podScaleMin:  CGFloat = 1.0
-    private static let podScaleMax:  CGFloat = 1.6
-    private static let podScaleStep: CGFloat = 0.2
-
-    private let podShrinkButton = NSButton()
-    private let podGrowButton   = NSButton()
-
     // MARK: - Init / deinit
 
     override init(frame: NSRect) {
@@ -153,35 +120,12 @@ final class TransportControlsView: NSView {
     // MARK: - Setup
 
     private func setupViews() {
-        restorePersistedControlPodAnchors()
-        loadPersistedPodScale()
-
         effectView.material       = .hudWindow
         effectView.blendingMode   = .withinWindow
         effectView.state          = .active
         effectView.alphaValue     = 0.72   // M2: windowed default; initialized so setFullscreenStyle can early-return on first call
         effectView.wantsLayer     = true
         effectView.layer?.masksToBounds = true
-        effectView.dragDidBegin = { [weak self] in
-            guard let self = self else { return }
-            self.dragStartAnchor = self.lastDisplayedPodAnchor ?? self.normalizedAnchor(for: self.currentPodFrame)
-        }
-        effectView.dragDidMove = { [weak self] delta in
-            guard let self = self,
-                  let dragStartAnchor = self.dragStartAnchor,
-                  self.bounds.width > 1,
-                  self.bounds.height > 1 else { return }
-            let startCenter = NSPoint(x: dragStartAnchor.x * self.bounds.width,
-                                      y: dragStartAnchor.y * self.bounds.height)
-            let movedCenter = NSPoint(x: startCenter.x + delta.x,
-                                      y: startCenter.y + delta.y)
-            let movedAnchor = CGPoint(x: movedCenter.x / self.bounds.width,
-                                      y: movedCenter.y / self.bounds.height)
-            self.setControlPodAnchor(movedAnchor,
-                                     for: self.currentControlPodPlacementMode(),
-                                     persist: true)
-            self.needsLayout = true
-        }
         addSubview(effectView)
 
         separator.wantsLayer = true
@@ -287,12 +231,6 @@ final class TransportControlsView: NSView {
         makeButton(fullscreenButton, symbol: "arrow.up.left.and.arrow.down.right", size: 11, action: #selector(fullscreenTapped))
         fullscreenButton.toolTip = "Toggle Fullscreen"
 
-        // Pod scale buttons — small +/- pair centered in the bottom bar.
-        makeButton(podShrinkButton, symbol: "minus", size: 7, action: #selector(podShrinkTapped))
-        podShrinkButton.toolTip = "Decrease control pod size"
-        makeButton(podGrowButton,   symbol: "plus",  size: 7, action: #selector(podGrowTapped))
-        podGrowButton.toolTip = "Increase control pod size"
-
         // Custom prefix rename button — shown above queue button when setting is ON
         dPrefixVideoPageButton.isBordered   = false
         dPrefixVideoPageButton.bezelStyle   = .regularSquare
@@ -311,13 +249,13 @@ final class TransportControlsView: NSView {
         dPrefixVideoPageButton.isHidden = true
         addSubview(dPrefixVideoPageButton)
 
-        // Apply initial visibility from UserDefaults (all optional controls default hidden)
+        // Apply current rail visibility. Legacy pod controls stay hidden in the shipped UI.
         applyVisibilitySettings()
         applySkipDurationSettings()
         setVideoPageDButtonVisible(SettingsWindowController.isCustomPrefixVideoPageEnabled())
         refreshUnifiedBottomRailMode()
 
-        // Live-update when Settings changes optional-control visibility
+        // Live-update when Settings changes playback control chrome.
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleVisibilityChange),
@@ -354,14 +292,16 @@ final class TransportControlsView: NSView {
 
     // MARK: - Visibility settings
 
-    /// Apply optional-control visibility from UserDefaults.
+    /// Apply playback control visibility for the active bottom rail.
     /// Call this on init and whenever transportVisibilityChanged is posted.
     func applyVisibilitySettings() {
         refreshUnifiedBottomRailMode()
-        stopButton.isHidden = !SettingsWindowController.isOptionalTransportControlVisible(.stop)
-        volumeButton.isHidden = !SettingsWindowController.isOptionalTransportControlVisible(.volume)
-        shuffleButton.isHidden = !SettingsWindowController.isOptionalTransportControlVisible(.shuffle)
-        repeatButton.isHidden = !SettingsWindowController.isOptionalTransportControlVisible(.repeatOne)
+        if !useUnifiedBottomRail {
+            stopButton.isHidden = !SettingsWindowController.isOptionalTransportControlVisible(.stop)
+            volumeButton.isHidden = !SettingsWindowController.isOptionalTransportControlVisible(.volume)
+            shuffleButton.isHidden = !SettingsWindowController.isOptionalTransportControlVisible(.shuffle)
+            repeatButton.isHidden = !SettingsWindowController.isOptionalTransportControlVisible(.repeatOne)
+        }
         bottomRail.applyVisibilitySettings()
         invalidateCachedDisplayState()
         needsLayout = true
@@ -471,9 +411,7 @@ final class TransportControlsView: NSView {
     }
 
     private func refreshUnifiedBottomRailMode() {
-        // P20.3: unified bottom rail is the only supported control bar.
-        // The legacy frosted pod path is retained for compilation but always hidden.
-        useUnifiedBottomRail = true
+        // Unified bottom rail is the only supported control bar.
         configureSubviewVisibilityForCurrentRailMode()
         if useUnifiedBottomRail {
             railAutohideController.threshold = UserDefaults.standard.double(forKey: SettingsWindowController.chromeAutohideThresholdKey)
@@ -492,8 +430,7 @@ final class TransportControlsView: NSView {
             effectView, separator, dPrefixVideoPageButton,
             queuePageButton, prevButton, rewindButton, playPauseButton, forwardButton,
             nextButton, stopButton, shuffleButton, repeatButton, elapsedLabel,
-            scrubber, remainingLabel, volumeButton, bookmarkButton, settingsButton, fullscreenButton,
-            podShrinkButton, podGrowButton
+            scrubber, remainingLabel, volumeButton, bookmarkButton, settingsButton, fullscreenButton
         ]
         legacyViews.forEach { $0.isHidden = legacyHidden }
         if !legacyHidden {
@@ -503,8 +440,6 @@ final class TransportControlsView: NSView {
             volumeButton.isHidden = !SettingsWindowController.isOptionalTransportControlVisible(.volume)
             shuffleButton.isHidden = !SettingsWindowController.isOptionalTransportControlVisible(.shuffle)
             repeatButton.isHidden = !SettingsWindowController.isOptionalTransportControlVisible(.repeatOne)
-            podShrinkButton.isHidden = false
-            podGrowButton.isHidden = false
         }
         if useUnifiedBottomRail {
             if !railAutohideStarted {
@@ -569,7 +504,7 @@ final class TransportControlsView: NSView {
         }
 
         let fs = isFullscreenStyle
-        let s  = controlPodScale   // scale factor — applied to pod and corner-button geometry
+        let s: CGFloat = 1.0
         let w  = bounds.width
         let h  = bounds.height
 
@@ -634,6 +569,8 @@ final class TransportControlsView: NSView {
         bookmarkButton.isEnabled = hasItem
         bookmarkButton.alphaValue = isBookmarked ? 1.0 : (hasItem ? 0.70 : 0.35)
         applySymbol(bookmarkButton, isBookmarked ? "bookmark.fill" : "bookmark", pointSize: 11)
+        bookmarkButton.contentTintColor = (isBookmarked ? PlayerBrandColors.periwinkle : .white)
+            .withAlphaComponent(isBookmarked ? 1.0 : 0.90)
         bookmarkButton.setAccessibilityValue(isBookmarked ? "bookmarked" : "not bookmarked")
 
         if !volumeButton.isHidden {
@@ -642,24 +579,6 @@ final class TransportControlsView: NSView {
                                         width: bottomButtonSize, height: bottomButtonSize)
             styleRound(volumeButton, size: bottomButtonSize)
         }
-
-        // Pod scale buttons — fixed-size pair centered between corner buttons.
-        let scaleBtnSz: CGFloat = 20
-        let scaleBtnGap: CGFloat = 6
-        let scalePairW = scaleBtnSz * 2 + scaleBtnGap
-        let scalePairX = (w - scalePairW) / 2
-        let scaleBtnY  = bottomY + (bottomButtonSize - scaleBtnSz) / 2  // vertically center
-        podShrinkButton.frame = NSRect(x: scalePairX,
-                                       y: scaleBtnY,
-                                       width: scaleBtnSz, height: scaleBtnSz)
-        styleRound(podShrinkButton, size: scaleBtnSz)
-        podShrinkButton.alphaValue = controlPodScale <= Self.podScaleMin ? 0.28 : 0.62
-
-        podGrowButton.frame = NSRect(x: scalePairX + scaleBtnSz + scaleBtnGap,
-                                     y: scaleBtnY,
-                                     width: scaleBtnSz, height: scaleBtnSz)
-        styleRound(podGrowButton, size: scaleBtnSz)
-        podGrowButton.alphaValue = controlPodScale >= Self.podScaleMax ? 0.28 : 0.62
 
         // Center transport pod. Default order:
         // 10s rewind, previous, play/pause, next, 10s forward.
@@ -685,17 +604,13 @@ final class TransportControlsView: NSView {
         let bottomCornerMaxY = bottomY + CGFloat(stackCount + 1) * bottomButtonSize + CGFloat(stackCount) * 4
         let podFrame = boundedPodFrame(defaultPodFrame,
                                        edgePad: edgePad,
-                                       bottomButtonMaxY: bottomCornerMaxY,
-                                       mode: currentControlPodPlacementMode())
+                                       bottomButtonMaxY: bottomCornerMaxY)
         let podX      = podFrame.minX
         let podYActual = podFrame.minY
         effectView.frame = podFrame
         effectView.layer?.cornerRadius = podH / 2
         effectView.layer?.borderWidth  = fs ? 0.8 : 1.0
         effectView.layer?.borderColor  = NSColor.white.withAlphaComponent(fs ? 0.10 : 0.14).cgColor
-        currentPodFrame        = podFrame
-        lastDisplayedPodAnchor = normalizedAnchor(for: podFrame)
-
         var x = podX + podPadX
         for (button, size, emphasized) in visibleCenter {
             let y = podYActual + (podH - size) / 2
@@ -720,15 +635,8 @@ final class TransportControlsView: NSView {
 
     private func boundedPodFrame(_ defaultFrame: NSRect,
                                  edgePad: CGFloat,
-                                 bottomButtonMaxY: CGFloat = 54,
-                                 mode: ControlPodPlacementMode) -> NSRect {
+                                 bottomButtonMaxY: CGFloat = 54) -> NSRect {
         var frame = defaultFrame
-        if let anchor = controlPodAnchors[mode] ?? lastDisplayedPodAnchor,
-           bounds.width > 1,
-           bounds.height > 1 {
-            frame.origin.x = anchor.x * bounds.width - frame.width / 2
-            frame.origin.y = anchor.y * bounds.height - frame.height / 2
-        }
         let minX = edgePad
         let maxX = max(minX, bounds.width - edgePad - frame.width)
         // minY: just above the scrubber/label row; corner-button overlap is acceptable when user drags low.
@@ -737,67 +645,6 @@ final class TransportControlsView: NSView {
         frame.origin.x = min(max(frame.origin.x, minX), maxX)
         frame.origin.y = min(max(frame.origin.y, minY), maxY)
         return frame
-    }
-
-    private func restorePersistedControlPodAnchors() {
-        for mode in ControlPodPlacementMode.allCases {
-            guard let xObject = UserDefaults.standard.object(forKey: mode.xDefaultsKey),
-                  let yObject = UserDefaults.standard.object(forKey: mode.yDefaultsKey) else { continue }
-            let x = UserDefaults.standard.double(forKey: mode.xDefaultsKey)
-            let y = UserDefaults.standard.double(forKey: mode.yDefaultsKey)
-            guard xObject is NSNumber, yObject is NSNumber else { continue }
-            controlPodAnchors[mode] = CGPoint(x: max(0, min(1, x)),
-                                              y: max(0, min(1, y)))
-        }
-    }
-
-    private func currentControlPodPlacementMode() -> ControlPodPlacementMode {
-        isFullscreenStyle ? .fullscreen : .windowed
-    }
-
-    private func normalizedAnchor(for frame: NSRect) -> CGPoint? {
-        guard !frame.isEmpty, bounds.width > 1, bounds.height > 1 else { return nil }
-        return CGPoint(x: max(0, min(1, frame.midX / bounds.width)),
-                       y: max(0, min(1, frame.midY / bounds.height)))
-    }
-
-    private func setControlPodAnchor(_ anchor: CGPoint,
-                                     for mode: ControlPodPlacementMode,
-                                     persist: Bool) {
-        guard !useUnifiedBottomRail else { return }
-        let clampedAnchor = CGPoint(x: max(0, min(1, anchor.x)),
-                                    y: max(0, min(1, anchor.y)))
-        controlPodAnchors[mode] = clampedAnchor
-        if persist {
-            UserDefaults.standard.set(clampedAnchor.x, forKey: mode.xDefaultsKey)
-            UserDefaults.standard.set(clampedAnchor.y, forKey: mode.yDefaultsKey)
-        }
-    }
-
-    // MARK: - Control pod scale
-
-    private func loadPersistedPodScale() {
-        guard UserDefaults.standard.object(forKey: Self.podScaleKey) != nil else { return }
-        let raw = CGFloat(UserDefaults.standard.double(forKey: Self.podScaleKey))
-        controlPodScale = max(Self.podScaleMin, min(Self.podScaleMax, raw))
-    }
-
-    @objc private func podGrowTapped() {
-        guard !useUnifiedBottomRail else { return }
-        guard controlPodScale < Self.podScaleMax else { return }
-        let raw = Double(controlPodScale) + Double(Self.podScaleStep)
-        controlPodScale = CGFloat(min(Double(Self.podScaleMax), (raw * 10).rounded() / 10))
-        UserDefaults.standard.set(Double(controlPodScale), forKey: Self.podScaleKey)
-        needsLayout = true
-    }
-
-    @objc private func podShrinkTapped() {
-        guard !useUnifiedBottomRail else { return }
-        guard controlPodScale > Self.podScaleMin else { return }
-        let raw = Double(controlPodScale) - Double(Self.podScaleStep)
-        controlPodScale = CGFloat(max(Double(Self.podScaleMin), (raw * 10).rounded() / 10))
-        UserDefaults.standard.set(Double(controlPodScale), forKey: Self.podScaleKey)
-        needsLayout = true
     }
 
     // MARK: - Seek notification
@@ -947,6 +794,8 @@ final class TransportControlsView: NSView {
         bookmarkButton.isEnabled = hasItem
         bookmarkButton.alphaValue = isBookmarked ? 1.0 : (hasItem ? 0.70 : 0.35)
         applySymbol(bookmarkButton, isBookmarked ? "bookmark.fill" : "bookmark", pointSize: 11)
+        bookmarkButton.contentTintColor = (isBookmarked ? PlayerBrandColors.periwinkle : .white)
+            .withAlphaComponent(isBookmarked ? 1.0 : 0.90)
         bookmarkButton.setAccessibilityValue(isBookmarked ? "bookmarked" : "not bookmarked")
     }
 
@@ -1150,26 +999,5 @@ private final class KnoblessSliderCell: NSSliderCell {
             NSColor.white.withAlphaComponent(0.72).setFill()
             NSBezierPath(roundedRect: filled, xRadius: 1, yRadius: 1).fill()
         }
-    }
-}
-
-private final class DraggableVisualEffectView: NSVisualEffectView {
-    var dragDidBegin: (() -> Void)?
-    var dragDidMove: ((NSPoint) -> Void)?
-    private var dragStartPoint: NSPoint?
-
-    override func mouseDown(with event: NSEvent) {
-        dragStartPoint = event.locationInWindow
-        dragDidBegin?()
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        guard let start = dragStartPoint else { return }
-        let current = event.locationInWindow
-        dragDidMove?(NSPoint(x: current.x - start.x, y: current.y - start.y))
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        dragStartPoint = nil
     }
 }

@@ -1,9 +1,9 @@
 import Cocoa
+import VLCKitSPM
 
 extension Notification.Name {
     static let autoHideSettingChanged         = Notification.Name("dwb.autoHideSettingChanged")
-    /// Posted when any optional-control visibility setting changes.
-    /// All open TransportControlsView instances observe this and call applyVisibilitySettings().
+    /// Posted when playback control chrome settings change.
     static let transportVisibilityChanged     = Notification.Name("dwb.transportVisibilityChanged")
     /// Posted when the shared skip-duration preference changes.
     static let skipDurationChanged            = Notification.Name("dwb.skipDurationChanged")
@@ -36,7 +36,7 @@ extension Notification.Name {
 }
 
 /// Singleton settings panel. Open via dwb > Settings… (Cmd+,).
-/// Four sidebar sections: Playback, Controls, Queue & Files, Developer.
+/// Sidebar sections: Playback, Controls, Queue & Files, Shortcuts, Advanced, About.
 /// Navigation uses the suite-shared settings pattern (matches dwb skim):
 /// visual-effect sidebar with rounded, suite-accent-selected items.
 final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
@@ -46,21 +46,17 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
 
         var defaultsKey: String {
             switch self {
-            case .stop:      return "showStopButton"
-            case .volume:    return "showVolumeButton"
-            case .shuffle:   return "showShuffleButton"
-            case .repeatOne: return "showRepeatButton"
+            case .stop:
+                return SettingsDefaultsRegistry.Keys.OptionalTransportControl.stop.defaultsKey
+            case .volume:
+                return SettingsDefaultsRegistry.Keys.OptionalTransportControl.volume.defaultsKey
+            case .shuffle:
+                return SettingsDefaultsRegistry.Keys.OptionalTransportControl.shuffle.defaultsKey
+            case .repeatOne:
+                return SettingsDefaultsRegistry.Keys.OptionalTransportControl.repeatOne.defaultsKey
             }
         }
 
-        var settingsTitle: String {
-            switch self {
-            case .stop:      return "Show Stop button"
-            case .volume:    return "Show Volume button"
-            case .shuffle:   return "Show Shuffle button"
-            case .repeatOne: return "Show Repeat button"
-            }
-        }
     }
 
     static let shared = SettingsWindowController()
@@ -68,68 +64,68 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     // MARK: - UserDefaults keys
 
     /// Non-fullscreen transport auto-hide. Default: false.
-    static let autoHideKey              = "autoHideTransportWindowed"
-    /// Optional transport button visibility keys. All default OFF (hidden).
+    static let autoHideKey              = SettingsDefaultsRegistry.Keys.autoHideTransportWindowed
+    /// Retained for old defaults/reset compatibility; the shipped UI uses BottomRailView.
     static let showStopKey              = OptionalTransportControl.stop.defaultsKey
     static let showVolumeKey            = OptionalTransportControl.volume.defaultsKey
     static let showShuffleKey           = OptionalTransportControl.shuffle.defaultsKey
     static let showRepeatKey            = OptionalTransportControl.repeatOne.defaultsKey
-    static let persistedVolumeKey       = "lastEffectiveVolume"
-    static let skipDurationKey          = "skipDurationSeconds"
-    static let defaultSkipDurationSeconds = 10
+    static let persistedVolumeKey       = SettingsDefaultsRegistry.Keys.persistedVolume
+    static let skipDurationKey          = SettingsDefaultsRegistry.Keys.skipDurationSeconds
+    static let defaultSkipDurationSeconds = SettingsDefaultsRegistry.Defaults.skipDurationSeconds
     /// Titlebar auto-hide in windowed mode. Default: false.
-    static let autoHideTitlebarKey      = "autoHideTitlebar"
+    static let autoHideTitlebarKey      = SettingsDefaultsRegistry.Keys.autoHideTitlebar
     /// Hide the titlebar chrome in windowed mode so video reaches the top edge. Default: false.
-    static let completeVideoWindowModeKey = "completeVideoWindowMode"
+    static let completeVideoWindowModeKey = SettingsDefaultsRegistry.Keys.completeVideoWindowMode
     /// Image slideshow display duration in seconds. Default: 3.
-    static let imageDurationKey         = "imageDurationSeconds"
-    static let defaultImageDurationSeconds = 3
+    static let imageDurationKey         = SettingsDefaultsRegistry.Keys.imageDurationSeconds
+    static let defaultImageDurationSeconds = SettingsDefaultsRegistry.Defaults.imageDurationSeconds
     /// GIF playback loop count before queue advance. Default: 1.
-    static let gifLoopCountKey          = "gifLoopCount"
-    static let defaultGIFLoopCount      = 1
+    static let gifLoopCountKey          = SettingsDefaultsRegistry.Keys.gifLoopCount
+    static let defaultGIFLoopCount      = SettingsDefaultsRegistry.Defaults.gifLoopCount
     /// Accepted media types for open/drop intake. Defaults: all true.
-    static let acceptVideoKey           = "acceptVideoMedia"
-    static let acceptImagesKey          = "acceptImageMedia"
-    static let acceptGIFKey             = "acceptGIFMedia"
+    static let acceptVideoKey           = SettingsDefaultsRegistry.Keys.acceptVideoMedia
+    static let acceptImagesKey          = SettingsDefaultsRegistry.Keys.acceptImageMedia
+    static let acceptGIFKey             = SettingsDefaultsRegistry.Keys.acceptGIFMedia
     /// Show title overlay when video or image playback starts. Default: true.
-    static let showTitleOverlayKey      = "showTitleOverlay"
+    static let showTitleOverlayKey      = SettingsDefaultsRegistry.Keys.showTitleOverlay
     /// One-click delete_ prefix rename in Queue Page (legacy key; migrated to customPrefixQueuePageKey).
-    static let deletePrefixRenameKey    = "deletePrefixRenameEnabled"
+    static let deletePrefixRenameKey    = SettingsDefaultsRegistry.Keys.deletePrefixRenameEnabled
     /// Show d_ rename button in player/video page (legacy key; migrated to customPrefixVideoPageKey).
-    static let videoPageDButtonKey      = "videoPageDButtonEnabled"
+    static let videoPageDButtonKey      = SettingsDefaultsRegistry.Keys.videoPageDButtonEnabled
     /// Stored custom prefix string for one-click rename. Trailing spaces preserved. Default: "".
-    static let customPrefixValueKey     = "customPrefixValue"
+    static let customPrefixValueKey     = SettingsDefaultsRegistry.Keys.customPrefixValue
     /// One-click custom prefix rename in Queue Page. Default: false (migrates from deletePrefixRenameKey).
-    static let customPrefixQueuePageKey = "customPrefixQueuePageEnabled"
+    static let customPrefixQueuePageKey = SettingsDefaultsRegistry.Keys.customPrefixQueuePageEnabled
     /// Show custom prefix button in player/video page. Default: false (migrates from videoPageDButtonKey).
-    static let customPrefixVideoPageKey = "customPrefixVideoPageEnabled"
+    static let customPrefixVideoPageKey = SettingsDefaultsRegistry.Keys.customPrefixVideoPageEnabled
     /// Stored secondary custom prefix string for one-click rename. Default: "".
-    static let customPrefixSecondaryValueKey = "customPrefixValue2"
+    static let customPrefixSecondaryValueKey = SettingsDefaultsRegistry.Keys.customPrefixSecondaryValue
     /// Show in-app debug console. Default: false.
-    static let debugConsoleKey          = "debugConsoleEnabled"
+    static let debugConsoleKey          = SettingsDefaultsRegistry.Keys.debugConsoleEnabled
     /// Verbose per-tick watchdog trace in Xcode console. Debug builds only. Default: false.
-    static let verboseAutoplayTraceKey  = "verboseAutoplayTrace"
+    static let verboseAutoplayTraceKey  = SettingsDefaultsRegistry.Keys.verboseAutoplayTrace
     /// Shared quiet-rail chrome idle threshold. Default: 3.0 seconds.
-    static let chromeAutohideThresholdKey = "chromeAutohideThreshold"
+    static let chromeAutohideThresholdKey = SettingsDefaultsRegistry.Keys.chromeAutohideThreshold
     /// Reduce quiet-rail chrome animation. Default mirrors the system reduce-motion setting at launch.
-    static let chromeReducedMotionKey   = "chromeReducedMotion"
+    static let chromeReducedMotionKey   = SettingsDefaultsRegistry.Keys.chromeReducedMotion
     /// Open the Queue Page when a player window launches. Default: false.
-    static let queuePanelOpenAtLaunchKey = "queuePanelOpenAtLaunch"
-    /// Feature gate for the unified bottom rail. Default: true as of P33.
-    static let useUnifiedBottomRailKey  = "useUnifiedBottomRail"
+    static let queuePanelOpenAtLaunchKey = SettingsDefaultsRegistry.Keys.queuePanelOpenAtLaunch
     /// Playback-bar button visibility toggles. All default ON to preserve the
     /// current unified-rail look; the user can hide individual buttons from
     /// Settings → Controls → Playback bar buttons.
-    static let bottomRailShowXKey         = "bottomRailShowXButton"
-    static let bottomRailShowShuffleKey   = "bottomRailShowShuffleButton"
-    static let bottomRailShowReplayKey    = "bottomRailShowReplayButton"
-    static let bottomRailShowVolumeKey    = "bottomRailShowVolumeButton"
-    static let bottomRailShowBookmarkKey  = "bottomRailShowBookmarkButton"
+    static let bottomRailShowXKey         = SettingsDefaultsRegistry.Keys.bottomRailShowXButton
+    static let bottomRailShowShuffleKey   = SettingsDefaultsRegistry.Keys.bottomRailShowShuffleButton
+    static let bottomRailShowReplayKey    = SettingsDefaultsRegistry.Keys.bottomRailShowReplayButton
+    static let bottomRailShowVolumeKey    = SettingsDefaultsRegistry.Keys.bottomRailShowVolumeButton
+    static let bottomRailShowBookmarkKey  = SettingsDefaultsRegistry.Keys.bottomRailShowBookmarkButton
     /// Default opacity for newly created player windows. Current windows keep local state.
-    static let playerWindowOpacityKey   = "playerWindowOpacity"
-    static let playerWindowOpacityMin: CGFloat = 0.35
-    static let playerWindowOpacityMax: CGFloat = 1.0
-    static let defaultPlayerWindowOpacityValue: CGFloat = 1.0
+    static let playerWindowOpacityKey   = SettingsDefaultsRegistry.Keys.playerWindowOpacity
+    static let playerWindowOpacityMin: CGFloat = CGFloat(SettingsDefaultsRegistry.Defaults.playerWindowOpacityMin)
+    static let playerWindowOpacityMax: CGFloat = CGFloat(SettingsDefaultsRegistry.Defaults.playerWindowOpacityMax)
+    static let defaultPlayerWindowOpacityValue: CGFloat = CGFloat(SettingsDefaultsRegistry.Defaults.playerWindowOpacity)
+    static let githubURLString = "https://github.com/dweebzxx/dwb-player"
+    static let githubIssuesURLString = "https://github.com/dweebzxx/dwb-player/issues"
 
     // MARK: - Static helpers
 
@@ -154,6 +150,10 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     }
     static func playerWindowOpacityPercent(_ opacity: CGFloat) -> Int {
         Int((clampedPlayerWindowOpacity(opacity) * 100.0).rounded())
+    }
+    static func vlcBackendVersionText() -> String {
+        let version = VLCLibrary.shared().version.trimmingCharacters(in: .whitespacesAndNewlines)
+        return version.isEmpty ? "Unavailable" : version
     }
     static func isVerboseAutoplayTraceEnabled() -> Bool {
         UserDefaults.standard.bool(forKey: verboseAutoplayTraceKey)
@@ -287,44 +287,35 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         if v != stored { defaults.set(v, forKey: gifLoopCountKey) }
         return v
     }
+    private static func settingsDefaultValues() -> [String: Any] {
+        SettingsDefaultsRegistry.defaultValues(
+            reduceMotionDefault: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        )
+    }
     static func registerDefaults() {
-        var d: [String: Any] = [
-            autoHideKey:                false,
-            skipDurationKey:            defaultSkipDurationSeconds,
-            imageDurationKey:           defaultImageDurationSeconds,
-            gifLoopCountKey:            defaultGIFLoopCount,
-            acceptVideoKey:             true,
-            acceptImagesKey:            true,
-            acceptGIFKey:               true,
-            autoHideTitlebarKey:        false,
-            completeVideoWindowModeKey: false,
-            showTitleOverlayKey:        true,
-            deletePrefixRenameKey:      false,
-            videoPageDButtonKey:        false,
-            customPrefixValueKey:          "",
-            customPrefixSecondaryValueKey: "",
-            debugConsoleKey:            false,
-            verboseAutoplayTraceKey:    false,
-            chromeAutohideThresholdKey: 3.0,
-            chromeReducedMotionKey:     NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-            queuePanelOpenAtLaunchKey:  false,
-            useUnifiedBottomRailKey:    true,
-            bottomRailShowXKey:         true,
-            bottomRailShowShuffleKey:   true,
-            bottomRailShowReplayKey:    true,
-            bottomRailShowVolumeKey:    true,
-            bottomRailShowBookmarkKey:  true,
-            playerWindowOpacityKey:      Double(defaultPlayerWindowOpacityValue),
-        ]
-        for c in OptionalTransportControl.allCases { d[c.defaultsKey] = false }
-        d[QueuePageView.durationColumnVisibleKey] = true
-        d[QueuePageView.sizeColumnVisibleKey]     = true
-        // Width keys remain registered for backward compatibility with prior
-        // P43.2/P43.3 builds. As of P43.4 the active Queue Page layout uses fixed
-        // adaptive widths and does not read these values.
-        d[QueuePageView.durationColumnWidthKey]   = 92.0
-        d[QueuePageView.sizeColumnWidthKey]       = 104.0
-        UserDefaults.standard.register(defaults: d)
+        SettingsDefaultsRegistry.register(
+            reduceMotionDefault: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        )
+    }
+    static func restoreSettingsDefaults() {
+        let defaults = UserDefaults.standard
+        for (key, value) in settingsDefaultValues() {
+            defaults.set(value, forKey: key)
+        }
+        NotificationCenter.default.post(name: .autoHideSettingChanged, object: nil)
+        NotificationCenter.default.post(name: .transportVisibilityChanged, object: nil)
+        NotificationCenter.default.post(name: .skipDurationChanged, object: nil)
+        NotificationCenter.default.post(name: .autoHideTitlebarChanged, object: nil)
+        NotificationCenter.default.post(name: .completeVideoWindowModeChanged, object: nil)
+        NotificationCenter.default.post(name: .imageDurationChanged, object: nil)
+        NotificationCenter.default.post(name: .gifLoopCountChanged, object: nil)
+        NotificationCenter.default.post(name: .acceptedMediaTypesChanged, object: nil)
+        NotificationCenter.default.post(name: .titleOverlaySettingChanged, object: nil)
+        NotificationCenter.default.post(name: .customPrefixRenameChanged, object: nil)
+        NotificationCenter.default.post(name: .videoPageCustomPrefixButtonSettingChanged, object: nil)
+        NotificationCenter.default.post(name: .customPrefixValueChanged, object: nil)
+        NotificationCenter.default.post(name: .debugConsoleSettingChanged, object: nil)
+        NotificationCenter.default.post(name: .bottomRailButtonVisibilityChanged, object: nil)
     }
     static func validatedSkipDurationSeconds(_ value: Int) -> Int {
         skipDurationOptions.contains(where: { $0.seconds == value }) ? value : defaultSkipDurationSeconds
@@ -368,13 +359,11 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
 
     // Controls section
     private let autoHideCheckbox             = NSButton()
-    private var optionalControlCheckboxes:   [OptionalTransportControl: NSButton] = [:]
     private let bottomRailShowXCheckbox        = NSButton()
     private let bottomRailShowShuffleCheckbox  = NSButton()
     private let bottomRailShowReplayCheckbox   = NSButton()
     private let bottomRailShowVolumeCheckbox   = NSButton()
     private let bottomRailShowBookmarkCheckbox = NSButton()
-    private let useUnifiedBottomRailCheckbox = NSButton()
     private let chromeAutohideThresholdPopup = NSPopUpButton()
     private let chromeReducedMotionCheckbox  = NSButton()
     private let autoHideTitlebarCheckbox     = NSButton()
@@ -390,29 +379,37 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private let customPrefixVideoPageCheckbox          = NSButton()
     private let queuePanelOpenAtLaunchCheckbox = NSButton()
 
-    // Developer section
+    // Advanced section
     private let debugConsoleCheckbox          = NSButton()
     private let verboseAutoplayTraceCheckbox  = NSButton()
+    private let restoreDefaultsButton         = NSButton()
+    private let clearBookmarksButton          = NSButton()
 
     // MARK: - Sidebar / detail state
 
     private var sidebarButtons: [SettingsSidebarItemButton] = []
     private let detailContainer = NSView()
     private var sectionViews:   [NSView] = []
-    private let sectionNames    = ["Playback", "Controls", "Queue & Files", "Developer", "About"]
+    private let sectionNames    = ["Playback", "Controls", "Queue & Files", "Shortcuts", "Advanced", "About"]
 
     // MARK: - Init
 
     private init() {
         let win = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 520),
-            styleMask: [.titled, .closable, .resizable],
+            contentRect: NSRect(x: 0, y: 0, width: 660, height: 450),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         win.title = "Settings"
         win.isReleasedWhenClosed = false
-        win.minSize = NSSize(width: 600, height: 420)
+        win.minSize = NSSize(width: 560, height: 390)
+        win.standardWindowButton(.closeButton)?.isHidden = false
+        win.standardWindowButton(.closeButton)?.isEnabled = true
+        win.standardWindowButton(.miniaturizeButton)?.isHidden = false
+        win.standardWindowButton(.miniaturizeButton)?.isEnabled = true
+        win.standardWindowButton(.zoomButton)?.isHidden = false
+        win.standardWindowButton(.zoomButton)?.isEnabled = false
         // Suite dark-theme consistency: pin the settings window to dark Aqua so its
         // chrome and controls match dwb skim's settings window on any system theme.
         win.appearance = NSAppearance(named: .darkAqua)
@@ -523,7 +520,8 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             buildPlaybackSection(),
             buildControlsSection(),
             buildQueueFilesSection(),
-            buildDeveloperSection(),
+            buildShortcutsSection(),
+            buildAdvancedSection(),
             buildAboutSection(),
         ]
         for (i, sv) in sectionViews.enumerated() {
@@ -623,7 +621,6 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
 
     private func buildControlsSection() -> NSView {
         configure(autoHideCheckbox, title: "Auto-hide controls bar in windowed mode", state: UserDefaults.standard.bool(forKey: Self.autoHideKey))
-        configure(useUnifiedBottomRailCheckbox, title: "Use unified bottom rail", state: UserDefaults.standard.bool(forKey: Self.useUnifiedBottomRailKey))
         configure(chromeReducedMotionCheckbox, title: "Reduce motion", state: UserDefaults.standard.bool(forKey: Self.chromeReducedMotionKey))
         configure(autoHideTitlebarCheckbox, title: "Auto-hide titlebar", state: Self.isAutoHideTitlebarEnabled())
         configure(completeVideoWindowModeCheckbox, title: "Complete video mode (windowed)", state: Self.isCompleteVideoWindowModeEnabled())
@@ -656,20 +653,16 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         opacityStack.orientation = .horizontal
         opacityStack.spacing = 10
         
-        for control in OptionalTransportControl.allCases {
-            let cb = NSButton()
-            configure(cb, title: control.settingsTitle, state: Self.isOptionalTransportControlVisible(control))
-            optionalControlCheckboxes[control] = cb
-        }
-
         configure(bottomRailShowXCheckbox,        title: "Show x_ button in playback bar",       state: Self.isBottomRailShowXEnabled())
         configure(bottomRailShowShuffleCheckbox,  title: "Show Shuffle button in playback bar",  state: Self.isBottomRailShowShuffleEnabled())
         configure(bottomRailShowReplayCheckbox,   title: "Show Replay button in playback bar",   state: Self.isBottomRailShowReplayEnabled())
         configure(bottomRailShowVolumeCheckbox,   title: "Show Volume button in playback bar",   state: Self.isBottomRailShowVolumeEnabled())
         configure(bottomRailShowBookmarkCheckbox, title: "Show Bookmark button in playback bar", state: Self.isBottomRailShowBookmarkEnabled())
 
-        let section1 = buildSection(title: "Transport visibility", rows: [
-            buildRow(label: nil, control: autoHideCheckbox)
+        let section1 = buildSection(title: "Playback bar behavior", rows: [
+            buildRow(label: nil, control: autoHideCheckbox),
+            buildRow(label: "Rail auto-hide delay", control: chromeAutohideThresholdPopup),
+            buildRow(label: nil, control: chromeReducedMotionCheckbox)
         ])
 
         let section1b = buildSection(title: "Playback bar buttons", rows: [
@@ -677,9 +670,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             buildRow(label: nil, control: bottomRailShowShuffleCheckbox),
             buildRow(label: nil, control: bottomRailShowReplayCheckbox),
             buildRow(label: nil, control: bottomRailShowVolumeCheckbox),
-            buildRow(label: nil, control: bottomRailShowBookmarkCheckbox),
-            buildRow(label: "Rail auto-hide delay", control: chromeAutohideThresholdPopup),
-            buildRow(label: nil, control: chromeReducedMotionCheckbox)
+            buildRow(label: nil, control: bottomRailShowBookmarkCheckbox)
         ])
 
         let section4 = buildSection(title: "Window chrome", rows: [
@@ -737,18 +728,39 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         return buildSectionContainer(sections: [section1, section2, section3])
     }
 
-    // MARK: - Section: Developer
+    // MARK: - Section: Advanced
 
-    private func buildDeveloperSection() -> NSView {
+    private func buildAdvancedSection() -> NSView {
         configure(debugConsoleCheckbox, title: "Show debug console", state: Self.isDebugConsoleEnabled())
         configure(verboseAutoplayTraceCheckbox, title: "Verbose autoplay trace (debug builds only)", state: Self.isVerboseAutoplayTraceEnabled())
+        restoreDefaultsButton.title = "Restore All Settings to Default"
+        restoreDefaultsButton.bezelStyle = .rounded
+        restoreDefaultsButton.target = self
+        restoreDefaultsButton.action = #selector(restoreAllSettingsToDefault(_:))
+        restoreDefaultsButton.translatesAutoresizingMaskIntoConstraints = false
+
+        clearBookmarksButton.title = "Clear All Bookmarks…"
+        clearBookmarksButton.bezelStyle = .rounded
+        clearBookmarksButton.target = self
+        clearBookmarksButton.action = #selector(clearAllBookmarks(_:))
+        clearBookmarksButton.translatesAutoresizingMaskIntoConstraints = false
 
         let section1 = buildSection(title: "Diagnostics", rows: [
             buildRow(label: nil, control: debugConsoleCheckbox),
             buildRow(label: nil, control: verboseAutoplayTraceCheckbox)
         ])
 
-        return buildSectionContainer(sections: [section1])
+        let section2 = buildSection(title: "Bookmarks", rows: [
+            buildRow(label: nil, control: clearBookmarksButton,
+                     helperText: "Bookmarks are stored locally on this device and may include full file paths of bookmarked media. Clearing is permanent and cannot be undone.")
+        ])
+
+        let section3 = buildSection(title: "Reset", rows: [
+            buildRow(label: nil, control: restoreDefaultsButton,
+                     helperText: "Restores dwb player preferences. Media files, queues, and bookmarks are not deleted.")
+        ])
+
+        return buildSectionContainer(sections: [section1, section2, section3])
     }
 
     // MARK: - Section: About
@@ -757,7 +769,6 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         let info = Bundle.main.infoDictionary
         let version = info?["CFBundleShortVersionString"] as? String ?? "—"
         let build   = info?["CFBundleVersion"]            as? String ?? "—"
-        let copyright = info?["NSHumanReadableCopyright"] as? String ?? ""
 
         func makeLabel(_ text: String, size: CGFloat = NSFont.systemFontSize, weight: NSFont.Weight = .regular, color: NSColor = .labelColor) -> NSTextField {
             let lbl = NSTextField(labelWithString: text)
@@ -768,29 +779,140 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             return lbl
         }
 
-        let nameLabel    = makeLabel("dwb player", size: 17, weight: .semibold)
-        let versionLabel = makeLabel("Version \(version)  ·  Build \(build)", color: .secondaryLabelColor)
-        let descLabel    = makeLabel("Local media playback for macOS", color: .secondaryLabelColor)
+        let iconView = NSImageView()
+        iconView.image = NSImage(named: NSImage.applicationIconName)
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            iconView.widthAnchor.constraint(equalToConstant: 108),
+            iconView.heightAnchor.constraint(equalToConstant: 108)
+        ])
+
+        let nameLabel     = makeLabel("dwb player", size: 17, weight: .semibold)
+        let versionLabel  = makeLabel("Version \(version)  ·  Build \(build)", color: .secondaryLabelColor)
+        let descLabel     = makeLabel("Local media playback for macOS", color: .secondaryLabelColor)
+        let licenseLabel  = makeLabel("MIT License", color: .tertiaryLabelColor)
         let platformLabel = makeLabel("Requires macOS 13 or later", color: .tertiaryLabelColor)
-        let techLabel    = makeLabel("Built with AppKit and VLCKit", color: .tertiaryLabelColor)
+        let techLabel     = makeLabel("Built with AppKit and VLCKit", color: .tertiaryLabelColor)
+        let vlcLabel      = makeLabel("VLC backend: \(Self.vlcBackendVersionText())", color: .tertiaryLabelColor)
 
-        var rows: [NSView] = [nameLabel, versionLabel, descLabel, platformLabel, techLabel]
+        let githubButton = makeAboutLinkButton(title: "GitHub Repository", action: #selector(openGitHubRepository(_:)))
+        let issueButton = makeAboutLinkButton(title: "Report an Issue", action: #selector(openGitHubIssues(_:)))
 
-        if !copyright.isEmpty {
-            let crLabel = makeLabel("© \(copyright)", color: .tertiaryLabelColor)
-            rows.append(crLabel)
+        let textStack = NSStackView(views: [nameLabel, versionLabel, descLabel, licenseLabel, platformLabel, techLabel, vlcLabel, githubButton, issueButton])
+        textStack.orientation = .vertical
+        textStack.alignment = .leading
+        textStack.spacing = 6
+        textStack.setCustomSpacing(10, after: nameLabel)
+        textStack.setCustomSpacing(4, after: versionLabel)
+        textStack.setCustomSpacing(10, after: descLabel)
+        textStack.setCustomSpacing(12, after: vlcLabel)
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let headerStack = NSStackView(views: [iconView, textStack])
+        headerStack.orientation = .horizontal
+        headerStack.alignment = .top
+        headerStack.spacing = 16
+        headerStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let copyrightLabel = makeLabel("© dwb", color: .tertiaryLabelColor)
+
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(headerStack)
+        container.addSubview(copyrightLabel)
+
+        NSLayoutConstraint.activate([
+            headerStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 24),
+            headerStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 24),
+            headerStack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -24),
+
+            copyrightLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -24),
+            copyrightLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -16),
+            headerStack.bottomAnchor.constraint(lessThanOrEqualTo: copyrightLabel.topAnchor, constant: -16)
+        ])
+
+        return container
+    }
+
+    private func makeAboutLinkButton(title: String, action: Selector) -> NSButton {
+        let button = NSButton(title: title, target: self, action: action)
+        button.isBordered = false
+        button.bezelStyle = .inline
+        button.alignment = .left
+        button.contentTintColor = .linkColor
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.attributedTitle = NSAttributedString(
+            string: title,
+            attributes: [
+                .foregroundColor: NSColor.linkColor,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize)
+            ]
+        )
+        return button
+    }
+
+    // MARK: - Section: Shortcuts
+
+    private struct ShortcutItem {
+        let title: String
+        let shortcut: String
+    }
+
+    private struct ShortcutGroup {
+        let title: String
+        let items: [ShortcutItem]
+    }
+
+    private static let shortcutGroups: [ShortcutGroup] = [
+        .init(title: "App & Files", items: [
+            .init(title: "Open Settings", shortcut: "⌘,"),
+            .init(title: "Quit dwb player", shortcut: "⌘Q"),
+            .init(title: "Open File", shortcut: "⌘O"),
+            .init(title: "Reveal in Finder", shortcut: "⇧⌘R"),
+            .init(title: "Clear Queue", shortcut: "⇧⌘⌫"),
+            .init(title: "New Window", shortcut: "⌘N")
+        ]),
+        .init(title: "Playback", items: [
+            .init(title: "Play / Pause", shortcut: "Space"),
+            .init(title: "Rewind by skip duration", shortcut: "← / ⌥←"),
+            .init(title: "Forward by skip duration", shortcut: "→ / ⌥→"),
+            .init(title: "Volume Up", shortcut: "↑ / ⌘↑"),
+            .init(title: "Volume Down", shortcut: "↓ / ⌘↓"),
+            .init(title: "Previous Item", shortcut: "Z"),
+            .init(title: "Next Item", shortcut: "X"),
+            .init(title: "Bookmark Current Item", shortcut: "B"),
+            .init(title: "Primary Prefix Rename", shortcut: "Q"),
+            .init(title: "Secondary Prefix Rename", shortcut: "⌥Q"),
+            .init(title: "Shuffle", shortcut: "⌥⌘S"),
+            .init(title: "Endless Shuffle", shortcut: "⌥⌘E"),
+            .init(title: "Repeat One", shortcut: "⌥⌘R")
+        ]),
+        .init(title: "Skip Duration Presets", items: [
+            .init(title: "10 seconds", shortcut: "1"),
+            .init(title: "30 seconds", shortcut: "3"),
+            .init(title: "60 seconds", shortcut: "6"),
+            .init(title: "3 minutes", shortcut: "9")
+        ]),
+        .init(title: "Video & Window", items: [
+            .init(title: "Fit", shortcut: "⌘1"),
+            .init(title: "Fill", shortcut: "⌘2"),
+            .init(title: "Stretch", shortcut: "⌘3"),
+            .init(title: "Minimize", shortcut: "⌘M"),
+            .init(title: "Four Window Grid", shortcut: "⌘4")
+        ]),
+        .init(title: "Queue & Settings", items: [
+            .init(title: "Remove selected queue rows", shortcut: "Delete / Forward Delete"),
+            .init(title: "Move Settings sidebar selection", shortcut: "↑ / ↓")
+        ])
+    ]
+
+    private func buildShortcutsSection() -> NSView {
+        let sections = Self.shortcutGroups.map { group in
+            buildSection(title: group.title, rows: group.items.map(buildShortcutRow(_:)))
         }
-
-        let stack = NSStackView(views: rows)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 6
-        stack.setCustomSpacing(10, after: nameLabel)
-        stack.setCustomSpacing(4, after: versionLabel)
-        stack.setCustomSpacing(12, after: descLabel)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        return buildSectionContainer(sections: [stack])
+        return buildSectionContainer(sections: sections)
     }
 
     // MARK: - Layout helpers
@@ -890,6 +1012,30 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         }
         
         return stack
+    }
+
+    private func buildShortcutRow(_ item: ShortcutItem) -> NSView {
+        let title = NSTextField(labelWithString: item.title)
+        title.font = .systemFont(ofSize: NSFont.systemFontSize)
+        title.textColor = .labelColor
+        title.lineBreakMode = .byTruncatingTail
+        title.translatesAutoresizingMaskIntoConstraints = false
+        title.widthAnchor.constraint(equalToConstant: 240).isActive = true
+
+        let shortcut = NSTextField(labelWithString: item.shortcut)
+        shortcut.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .medium)
+        shortcut.textColor = .secondaryLabelColor
+        shortcut.alignment = .right
+        shortcut.lineBreakMode = .byTruncatingTail
+        shortcut.translatesAutoresizingMaskIntoConstraints = false
+        shortcut.widthAnchor.constraint(greaterThanOrEqualToConstant: 96).isActive = true
+
+        let row = NSStackView(views: [title, shortcut])
+        row.orientation = .horizontal
+        row.alignment = .firstBaseline
+        row.spacing = 18
+        row.translatesAutoresizingMaskIntoConstraints = false
+        return row
     }
 
     private func buildSectionContainer(sections: [NSView]) -> NSView {
@@ -1002,12 +1148,6 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             UserDefaults.standard.set(enabled, forKey: Self.verboseAutoplayTraceKey)
             return
         }
-        if sender === useUnifiedBottomRailCheckbox {
-            UserDefaults.standard.set(enabled, forKey: Self.useUnifiedBottomRailKey)
-            NotificationCenter.default.post(name: .transportVisibilityChanged, object: nil)
-            DebugConsoleController.log("settings", "useUnifiedBottomRail=\(enabled)")
-            return
-        }
         if sender === chromeReducedMotionCheckbox {
             UserDefaults.standard.set(enabled, forKey: Self.chromeReducedMotionKey)
             NotificationCenter.default.post(name: .transportVisibilityChanged, object: nil)
@@ -1034,10 +1174,6 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             DebugConsoleController.log("settings", "\(key)=\(enabled)")
             return
         }
-        guard let control = optionalControlCheckboxes.first(where: { $0.value === sender })?.key else { return }
-        UserDefaults.standard.set(enabled, forKey: control.defaultsKey)
-        NotificationCenter.default.post(name: .transportVisibilityChanged, object: nil)
-        DebugConsoleController.log("settings", "optionalControl.\(control.defaultsKey)=\(enabled)")
     }
 
     @objc private func skipDurationPopupChanged(_ sender: NSPopUpButton) {
@@ -1094,6 +1230,63 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         DebugConsoleController.log("settings", "playerWindowOpacity=100%")
     }
 
+    @objc private func restoreAllSettingsToDefault(_ sender: NSButton) {
+        let alert = NSAlert()
+        alert.messageText = "Restore all settings to default?"
+        alert.informativeText = "This resets dwb player preferences. It does not delete media files, queues, or bookmarks."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Restore Defaults")
+        alert.addButton(withTitle: "Cancel")
+
+        if let window = self.window {
+            alert.beginSheetModal(for: window) { [weak self] response in
+                guard response == .alertFirstButtonReturn else { return }
+                self?.performRestoreSettingsDefaults()
+            }
+        } else {
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            performRestoreSettingsDefaults()
+        }
+    }
+
+    private func performRestoreSettingsDefaults() {
+        Self.restoreSettingsDefaults()
+        syncUIFromDefaults()
+        targetPlayerWindowController()?.setWindowOpacityFromSettings(Self.defaultPlayerWindowOpacityValue)
+        DebugConsoleController.log("settings", "restoreDefaults")
+    }
+
+    @objc private func clearAllBookmarks(_ sender: NSButton) {
+        let alert = NSAlert()
+        alert.messageText = "Clear all bookmarks?"
+        alert.informativeText = "Bookmarks are stored locally and can include full file paths. This cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Clear Bookmarks")
+        alert.addButton(withTitle: "Cancel")
+
+        if let window = self.window {
+            alert.beginSheetModal(for: window) { response in
+                guard response == .alertFirstButtonReturn else { return }
+                BookmarkStore.shared.clearAll()
+                DebugConsoleController.log("settings", "clearAllBookmarks")
+            }
+        } else {
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            BookmarkStore.shared.clearAll()
+            DebugConsoleController.log("settings", "clearAllBookmarks")
+        }
+    }
+
+    @objc private func openGitHubRepository(_ sender: Any) {
+        guard let url = URL(string: Self.githubURLString) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc private func openGitHubIssues(_ sender: Any) {
+        guard let url = URL(string: Self.githubIssuesURLString) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     @objc private func settingsWindowDidBecomeKey(_ notification: Notification) {
         syncWindowOpacityControlsFromTargetOrDefault()
         syncPlaybackSpeedControlsFromTarget()
@@ -1128,9 +1321,6 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
 
     private func syncUIFromDefaults() {
         autoHideCheckbox.state = UserDefaults.standard.bool(forKey: Self.autoHideKey) ? .on : .off
-        for (control, cb) in optionalControlCheckboxes {
-            cb.state = Self.isOptionalTransportControlVisible(control) ? .on : .off
-        }
         customPrefixQueuePageCheckbox.state             = Self.isCustomPrefixQueuePageEnabled()    ? .on : .off
         customPrefixVideoPageCheckbox.state             = Self.isCustomPrefixVideoPageEnabled()    ? .on : .off
         customPrefixValueTextField.stringValue          = Self.customPrefixValue()
@@ -1143,7 +1333,6 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         acceptGIFCheckbox.state                = Self.acceptsGIFMedia()               ? .on : .off
         debugConsoleCheckbox.state             = Self.isDebugConsoleEnabled()          ? .on : .off
         verboseAutoplayTraceCheckbox.state     = Self.isVerboseAutoplayTraceEnabled()  ? .on : .off
-        useUnifiedBottomRailCheckbox.state     = UserDefaults.standard.bool(forKey: Self.useUnifiedBottomRailKey)    ? .on : .off
         chromeReducedMotionCheckbox.state      = UserDefaults.standard.bool(forKey: Self.chromeReducedMotionKey)     ? .on : .off
         queuePanelOpenAtLaunchCheckbox.state   = UserDefaults.standard.bool(forKey: Self.queuePanelOpenAtLaunchKey) ? .on : .off
         bottomRailShowXCheckbox.state          = Self.isBottomRailShowXEnabled()        ? .on : .off
