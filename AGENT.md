@@ -62,7 +62,7 @@ Preserve the following behavior unless a future pass explicitly changes it:
 - Primary custom prefix identity color: Dark Teal 500 `#488FA0`. Secondary custom prefix identity color: Burnt Orange 300 `#D4906A`. Reserved status colors must not be used for prefix category identity.
 - Rail buttons and Quick Queue behavior
 - Total queue duration display
-- Control-pod drag and placement persistence
+- Unified bottom rail remains the only shipped control surface; do not reintroduce legacy control-pod drag, scale, anchor, or placement persistence unless a future explicit feature pass re-designs and tests it.
 
 ---
 
