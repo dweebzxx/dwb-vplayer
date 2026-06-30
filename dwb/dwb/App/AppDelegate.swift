@@ -11,6 +11,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         SettingsWindowController.registerDefaults()
+        // Force xtreme mode off every launch regardless of last persisted state.
+        // GIF bookmark, opacity, and audio settings are not touched.
+        UserDefaults.standard.set(false, forKey: SettingsDefaultsRegistry.Keys.xtremeModeEnabled)
         _ = DebugConsoleController.shared   // eagerly init so it observes settings from launch
         XtremeAudioController.shared.syncFromDefaults()
         buildMainMenu()

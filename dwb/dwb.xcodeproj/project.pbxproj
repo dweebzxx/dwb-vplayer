@@ -496,7 +496,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 4.2.2;
-				PRODUCT_BUNDLE_IDENTIFIER = com.dwb.dwb;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dweebz.dwb-xtreme;
 				PRODUCT_NAME = "dwb xtreme";
 				SDKROOT = macosx;
 			};
@@ -513,7 +513,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 4.2.2;
-				PRODUCT_BUNDLE_IDENTIFIER = com.dwb.dwb;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dweebz.dwb-xtreme;
 				PRODUCT_NAME = "dwb xtreme";
 				SDKROOT = macosx;
 			};

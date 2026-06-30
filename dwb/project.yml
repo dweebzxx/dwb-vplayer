@@ -37,7 +37,7 @@ targets:
         INFOPLIST_FILE: dwb/Resources/Info.plist
         MARKETING_VERSION: "4.2.2"
         CURRENT_PROJECT_VERSION: "4.2.2"
-        PRODUCT_BUNDLE_IDENTIFIER: com.dwb.dwb
+        PRODUCT_BUNDLE_IDENTIFIER: com.dweebz.dwb-xtreme
         PRODUCT_NAME: "dwb xtreme"
         ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: "YES"
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
