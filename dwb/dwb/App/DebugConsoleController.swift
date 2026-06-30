@@ -272,7 +272,7 @@ final class DebugConsoleController: NSWindowController {
         let safe = timeFormatter.string(from: Date())
             .replacingOccurrences(of: ":", with: "-")
             .replacingOccurrences(of: ".", with: "-")
-        panel.nameFieldStringValue = "dwb player debug-\(safe).txt"
+        panel.nameFieldStringValue = "dwb xtreme debug-\(safe).txt"
         panel.begin { [weak self] result in
             guard result == .OK, let url = panel.url, let self = self else { return }
             let text = self.sanitizedText(self.entries.map { self.formatEntry($0) }.joined(separator: "\n"))
@@ -295,7 +295,7 @@ final class DebugConsoleController: NSWindowController {
         let pausedNote = isPaused ? " [PAUSED]" : ""
         let ts = timeFormatter.string(from: Date())
         var lines: [String] = [
-            "dwb player Debug Snapshot — \(ts)",
+            "dwb xtreme Debug Snapshot — \(ts)",
             "Buffer: \(total) entries, \(visible) visible\(pausedNote)",
             ""
         ]
@@ -360,7 +360,7 @@ final class DebugConsoleController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        panel.title = "dwb player Debug Console"
+        panel.title = "dwb xtreme Debug Console"
         panel.isReleasedWhenClosed = false
         panel.isFloatingPanel = false
         panel.level = .normal

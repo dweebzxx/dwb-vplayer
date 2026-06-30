@@ -4,7 +4,7 @@ set -euo pipefail
 script_dir="${0:A:h}"
 root_dir="${script_dir:h}"
 
-app_path="$root_dir/dist/dwb player.app"
+app_path="$root_dir/dist/dwb xtreme.app"
 release_root="$root_dir/dist/release"
 output_dir=""
 version="4.2.2"
@@ -20,8 +20,8 @@ usage() {
 Usage: scripts/package-release.sh [options]
 
 Options:
-  --app <path>          App bundle to package. Default: dist/dwb player.app
-  --output-dir <path>   Release artifact directory. Default: dist/release/dwb-player-<version>
+  --app <path>          App bundle to package. Default: dist/dwb xtreme.app
+  --output-dir <path>   Release artifact directory. Default: dist/release/dwb-xtreme-<version>
   --version <version>   Expected app/release version. Default: 4.2.2
   --build <build>       Expected bundle build number. Default: 4.2.2
   --skip-build          Package the existing app after verification
@@ -246,7 +246,7 @@ submit_zip_for_notarization() {
 }
 
 app_path="${app_path:A}"
-artifact_base="dwb-player-${version}"
+artifact_base="dwb-xtreme-${version}"
 if [[ -z "$output_dir" ]]; then
     output_dir="$release_root/$artifact_base"
 fi
@@ -262,10 +262,10 @@ manifest_path="$output_dir/$manifest_name"
 zip_check_path="${zip_path#$root_dir/}"
 staging_root="$root_dir/.tmp/package-release"
 staging_parent="$staging_root/stage"
-staged_app="$staging_parent/dwb player.app"
+staged_app="$staging_parent/dwb xtreme.app"
 verify_root="$root_dir/.tmp/package-verify"
-extracted_app="$verify_root/dwb player.app"
-build_info_path="$root_dir/dist/dwb-player-app-build-info.txt"
+extracted_app="$verify_root/dwb xtreme.app"
+build_info_path="$root_dir/dist/dwb-xtreme-app-build-info.txt"
 configuration="${DWB_CONFIGURATION:-Release}"
 source_date_epoch="${SOURCE_DATE_EPOCH:-946684800}"
 source_touch_time="$(TZ=UTC date -r "$source_date_epoch" '+%Y%m%d%H%M.%S')"
@@ -319,7 +319,7 @@ while IFS= read -r item; do
 done < <(find "$staged_app" -depth -print | sort)
 
 printf "Creating ZIP: %s\n" "$zip_path"
-(cd "$staging_parent" && ditto -c -k --keepParent --sequesterRsrc --zlibCompressionLevel 9 "dwb player.app" "$zip_path")
+(cd "$staging_parent" && ditto -c -k --keepParent --sequesterRsrc --zlibCompressionLevel 9 "dwb xtreme.app" "$zip_path")
 
 if [[ ! -s "$zip_path" ]]; then
     printf "ERROR: ZIP was not created or is empty: %s\n" "$zip_path" >&2
@@ -371,7 +371,7 @@ if [[ "$notarize" -eq 1 ]]; then
 
     printf "Recreating ZIP with stapled app...\n"
     rm -f "$zip_path" "$sha_path"
-    (cd "$staging_parent" && ditto -c -k --keepParent --sequesterRsrc --zlibCompressionLevel 9 "dwb player.app" "$zip_path")
+    (cd "$staging_parent" && ditto -c -k --keepParent --sequesterRsrc --zlibCompressionLevel 9 "dwb xtreme.app" "$zip_path")
     sha256="$(shasum -a 256 "$zip_path" | awk '{ print $1 }')"
     artifact_size_bytes="$(stat -f '%z' "$zip_path")"
     printf "%s  %s\n" "$sha256" "$zip_check_path" > "$sha_path"
@@ -403,11 +403,11 @@ if [[ "$notarize" -eq 1 ]]; then
 fi
 
 cat > "$notes_path" <<EOF
-# dwb player v${version}
+# dwb xtreme v${version}
 
 ## Overview
 
-This is a local draft release note for the dwb player ${version} macOS ZIP artifact. It has not been uploaded or published.
+This is a local draft release note for the dwb xtreme ${version} macOS ZIP artifact. It has not been uploaded or published.
 
 ## Highlights
 
@@ -436,7 +436,7 @@ This is a local draft release note for the dwb player ${version} macOS ZIP artif
 
 ## Install And Open Note
 
-Extract \`${zip_name}\` to produce \`dwb player.app\`. Local ad-hoc ZIPs are for local verification only and can be rejected by macOS Gatekeeper. Public binary use requires a Developer ID signed, notarized, stapled, and Gatekeeper-verified artifact.
+Extract \`${zip_name}\` to produce \`dwb xtreme.app\`. Local ad-hoc ZIPs are for local verification only and can be rejected by macOS Gatekeeper. Public binary use requires a Developer ID signed, notarized, stapled, and Gatekeeper-verified artifact.
 
 ## Checksum
 
@@ -460,7 +460,7 @@ EOF
 
 cat > "$manifest_path" <<EOF
 {
-  "app_name": $(json_string "dwb player"),
+  "app_name": $(json_string "dwb xtreme"),
   "version": $(json_string "$version"),
   "build": $(json_string "$build"),
   "configuration": $(json_string "$configuration"),

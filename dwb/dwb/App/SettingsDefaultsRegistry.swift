@@ -30,6 +30,13 @@ enum SettingsDefaultsRegistry {
         static let bottomRailShowVolumeButton = "bottomRailShowVolumeButton"
         static let bottomRailShowBookmarkButton = "bottomRailShowBookmarkButton"
         static let playerWindowOpacity = "playerWindowOpacity"
+        static let xtremeModeEnabled = "xtremeModeEnabled"
+        static let xtremeModeGIFBookmarkData = "xtremeModeGIFBookmarkData"
+        static let xtremeModeOpacity = "xtremeModeOpacity"
+        static let xtremeAudioEnabled = "xtremeAudioEnabled"
+        static let xtremeAudioMP3BookmarkData = "xtremeAudioMP3BookmarkData"
+        static let xtremeAudioVolume = "xtremeAudioVolume"
+        static let xtremeAudioMuteMedia = "xtremeAudioMuteMedia"
 
         enum OptionalTransportControl: CaseIterable {
             case stop, volume, shuffle, repeatOne
@@ -62,6 +69,12 @@ enum SettingsDefaultsRegistry {
         static let playerWindowOpacityMin = 0.35
         static let playerWindowOpacityMax = 1.0
         static let playerWindowOpacity = 1.0
+        static let xtremeModeOpacityMin = 0.05
+        static let xtremeModeOpacityMax = 0.50
+        static let xtremeModeOpacity = 0.15
+        static let xtremeAudioVolumeMin = 0.0
+        static let xtremeAudioVolumeMax = 1.0
+        static let xtremeAudioVolume = 0.50
     }
 
     static func defaultValues(reduceMotionDefault: Bool) -> [String: Any] {
@@ -91,6 +104,11 @@ enum SettingsDefaultsRegistry {
             Keys.bottomRailShowVolumeButton: true,
             Keys.bottomRailShowBookmarkButton: true,
             Keys.playerWindowOpacity: Defaults.playerWindowOpacity,
+            Keys.xtremeModeEnabled: false,
+            Keys.xtremeModeOpacity: Defaults.xtremeModeOpacity,
+            Keys.xtremeAudioEnabled: false,
+            Keys.xtremeAudioVolume: Defaults.xtremeAudioVolume,
+            Keys.xtremeAudioMuteMedia: false,
         ]
 
         for control in Keys.OptionalTransportControl.allCases {

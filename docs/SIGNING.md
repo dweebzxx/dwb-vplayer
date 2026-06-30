@@ -1,6 +1,6 @@
-# Signing dwb player
+# Signing dwb xtreme
 
-This document describes the local macOS signing workflow for `dwb player.app`.
+This document describes the local macOS signing workflow for `dwb xtreme.app`.
 
 This workflow does not notarize the app, create a GitHub release, upload artifacts, or make the app Gatekeeper-ready unless Developer ID signing, Hardened Runtime, notarization, stapling, and Gatekeeper verification are explicitly requested and completed.
 
@@ -11,7 +11,7 @@ P83 defines the release hardening posture only. It does not publish a binary, us
 The intended distribution posture is:
 
 - Source/local build: `./scripts/build-app.sh` remains credential-free and may produce an unsigned or ad-hoc signed app.
-- Ad-hoc local app: the default build signs `dist/dwb player.app` with identity `-` so `codesign --verify --deep --strict` can pass for local hygiene.
+- Ad-hoc local app: the default build signs `dist/dwb xtreme.app` with identity `-` so `codesign --verify --deep --strict` can pass for local hygiene.
 - Developer ID public binary: public release signing must use a Developer ID Application identity with Hardened Runtime and timestamping.
 - Notarized/stapled public binary: notarization must be requested explicitly, performed against the release artifact, stapled where Apple supports stapling, and verified before publication.
 - Gatekeeper verification: `spctl -a -vv` must be recorded for the exact app/package that will be distributed, or for the app extracted from the exact ZIP.
@@ -30,10 +30,10 @@ The canonical build command is:
 
 The default build path uses Xcode/SwiftPM resolution for the pinned VLCKit dependency in `Package.resolved`. Cached VLCKit products are local-development-only, disabled by default, and are not a substitute for release dependency provenance.
 
-By default, the build script produces `dist/dwb player.app` and then runs:
+By default, the build script produces `dist/dwb xtreme.app` and then runs:
 
 ```sh
-scripts/sign-app.sh --app "dist/dwb player.app" --adhoc --no-timestamp
+scripts/sign-app.sh --app "dist/dwb xtreme.app" --adhoc --no-timestamp
 ```
 
 That fixes the previous malformed linker/ad-hoc posture by applying a real bundle signature with sealed resources and a bound `Info.plist`. It is still only ad-hoc signed, not Developer ID signed, not notarized, and not stapled.
@@ -49,14 +49,14 @@ DWB_SKIP_SIGN=1 ./scripts/build-app.sh
 Run the signing script directly when you need to sign or verify an existing app bundle:
 
 ```sh
-scripts/sign-app.sh --app "dist/dwb player.app" --adhoc
-scripts/sign-app.sh --app "dist/dwb player.app" --verify-only
+scripts/sign-app.sh --app "dist/dwb xtreme.app" --adhoc
+scripts/sign-app.sh --app "dist/dwb xtreme.app" --verify-only
 ```
 
 Options:
 
 ```text
---app <path>          App bundle to sign or verify. Default: dist/dwb player.app
+--app <path>          App bundle to sign or verify. Default: dist/dwb xtreme.app
 --identity <name>     Signing identity name or hash. Default: DWB_SIGNING_IDENTITY
 --adhoc              Sign with ad-hoc identity "-"
 --timestamp          Request timestamp signing for non-ad-hoc identities
@@ -81,7 +81,7 @@ The script does not create, export, import, print, or delete certificates, priva
 Ad-hoc signing is the default local workflow:
 
 ```sh
-scripts/sign-app.sh --app "dist/dwb player.app" --adhoc
+scripts/sign-app.sh --app "dist/dwb xtreme.app" --adhoc
 ```
 
 Ad-hoc signing can make `codesign --verify --deep --strict` pass for local build hygiene. It does not identify a developer to macOS Gatekeeper and does not make the app suitable as a public release download.
@@ -89,9 +89,9 @@ Ad-hoc signing can make `codesign --verify --deep --strict` pass for local build
 Expected verification shape for ad-hoc builds:
 
 ```sh
-codesign --verify --deep --strict --verbose=4 "dist/dwb player.app"
-codesign -dv --verbose=4 "dist/dwb player.app"
-spctl -a -vv "dist/dwb player.app"
+codesign --verify --deep --strict --verbose=4 "dist/dwb xtreme.app"
+codesign -dv --verbose=4 "dist/dwb xtreme.app"
+spctl -a -vv "dist/dwb xtreme.app"
 ```
 
 `codesign` should pass. `spctl` can reject the app because ad-hoc signing is not Developer ID signing and the local workflow does not notarize.
@@ -101,7 +101,7 @@ spctl -a -vv "dist/dwb player.app"
 If you have a local code-signing certificate already available in your keychain, use it explicitly:
 
 ```sh
-scripts/sign-app.sh --app "dist/dwb player.app" --identity "Your Local Signing Identity" --no-timestamp
+scripts/sign-app.sh --app "dist/dwb xtreme.app" --identity "Your Local Signing Identity" --no-timestamp
 ```
 
 Or for build integration:
@@ -180,7 +180,7 @@ Local ZIP draft:
 ./scripts/package-release.sh
 ```
 
-This builds or verifies `dist/dwb player.app`, creates a ZIP, checksum, manifest, and draft notes, and records the local signing/Gatekeeper status. It does not notarize or upload.
+This builds or verifies `dist/dwb xtreme.app`, creates a ZIP, checksum, manifest, and draft notes, and records the local signing/Gatekeeper status. It does not notarize or upload.
 
 Public ZIP release candidate:
 
@@ -227,7 +227,7 @@ Check installer release inputs without building or upload:
 
 P83 does not add an entitlements file and does not enable App Sandbox.
 
-The practical reason is that `dwb player` is a local media player whose core workflows depend on user-selected files and folders, recursive folder import, drag-and-drop/open-with flows, persisted recent/bookmarked local paths, Reveal in Finder, and user-triggered rename operations. Adopting App Sandbox safely would require a dedicated design pass for security-scoped bookmark storage, access renewal, stale bookmark handling, folder recursion permissions, rename behavior, VLCKit file access, and user-facing failure recovery.
+The practical reason is that `dwb xtreme` is a local media player whose core workflows depend on user-selected files and folders, recursive folder import, drag-and-drop/open-with flows, persisted recent/bookmarked local paths, Reveal in Finder, and user-triggered rename operations. Adopting App Sandbox safely would require a dedicated design pass for security-scoped bookmark storage, access renewal, stale bookmark handling, folder recursion permissions, rename behavior, VLCKit file access, and user-facing failure recovery.
 
 Until that design exists, the honest posture is: Developer ID + Hardened Runtime + notarization/stapling for public binaries, with App Sandbox deferred and explicitly disclosed.
 
@@ -241,4 +241,4 @@ Use signing terms narrowly:
 - Notarized is not stapled unless stapler verification confirms it.
 - Gatekeeper-ready requires appropriate signing, notarization, and verification of the exact artifact being distributed.
 
-Do not claim Gatekeeper readiness for `dist/dwb player.app` unless `spctl -a -vv "dist/dwb player.app"` accepts it and the signing/notarization status supports that claim.
+Do not claim Gatekeeper readiness for `dist/dwb xtreme.app` unless `spctl -a -vv "dist/dwb xtreme.app"` accepts it and the signing/notarization status supports that claim.

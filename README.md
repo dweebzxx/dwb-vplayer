@@ -1,26 +1,27 @@
 <p align="center">
-  <img src="docs/images/dwb-icon.png" alt="dwb player app icon" width="144">
+  <img src="docs/images/dwb-icon.png" alt="dwb xtreme app icon" width="144">
 </p>
 
-<h1 align="center">dwb player</h1>
+<h1 align="center">dwb xtreme</h1>
 
 <p align="center">
   A native macOS media player for fast local queueing, multi-window playback, and practical file controls.
 </p>
 
 <p align="center">
-  <img src="docs/images/dwb-hero.png" alt="dwb player main playback window with bottom rail controls" width="900">
+  <img src="docs/images/dwb-hero.png" alt="dwb xtreme main playback window with bottom rail controls" width="900">
 </p>
 
 ## Overview
 
-dwb player is a native Swift/AppKit media player for macOS 13 and newer. Version 4.2.2 focuses on local media playback, fast queue building, independent player windows, Finder-style file ordering, and direct controls for working through files on disk.
+dwb xtreme is a native Swift/AppKit media player for macOS 13 and newer. Version 4.2.2 focuses on local media playback, fast queue building, independent player windows, Finder-style file ordering, and direct controls for working through files on disk.
 
-Playback is powered by VLCKit through Swift Package Manager. dwb player is local-only: it does not provide streaming, cloud sync, telemetry, transcoding, or media-library management.
+Playback is powered by VLCKit through Swift Package Manager. dwb xtreme is local-only: it does not provide streaming, cloud sync, telemetry, transcoding, or media-library management.
 
 ## Current Release Highlights
 
-- Standardized public app naming to `dwb player` across the interface and documentation.
+- Added an `xtreme` Settings panel with `xtreme mode` GIF overlay controls and `xtreme audio` MP3 loop controls.
+- Standardized public app naming to `dwb xtreme` across the interface and documentation.
 - Refreshed Settings and About sections with updated attributions and links.
 - Hardened multi-window autoplay transitions by reusing the VLCKit player during normal auto-advance to prevent configuration hangs.
 
@@ -69,27 +70,29 @@ Playback is powered by VLCKit through Swift Package Manager. dwb player is local
 - More menu fallback for rail actions that do not fit in the active bottom rail.
 - Complete Video Mode for windowed fill playback.
 - Window opacity slider from 35% to 100%.
+- xtreme mode overlays a selected looping GIF over the media area at 5% to 50% opacity.
+- xtreme audio loops a selected MP3 with independent volume and an option to mute app media audio while it plays.
 
 ### Settings, Menus, And About
 
-- Settings window sections: Playback, Controls, Queue & Files, Shortcuts, Advanced, and About.
+- Settings window sections: Playback, Controls, Queue & Files, Shortcuts, xtreme, Advanced, and About.
 - Configurable skip duration, slideshow duration, GIF loop count, accepted media types, optional playback-bar buttons, Queue Page behavior, rename options, titlebar behavior, Complete Video Mode, rail behavior, playback speed, and window opacity.
-- About section identifies `dwb player`, shows the app version/build, mentions the MIT License, identifies AppKit and VLCKit, and links to the GitHub repository and issue tracker.
-- Programmatic menus cover dwb player, File, Playback, Video, and Window actions including Settings, Open, Reveal in Finder, Rename, Remove Current from Queue, Clear Queue, New Window, playback controls, speed, scale mode, Four Window Grid, Keep Window On Top, and Auto-hide Titlebar.
+- About section identifies `dwb xtreme`, shows the app version/build, mentions the MIT License, identifies AppKit and VLCKit, and links to the GitHub repository and issue tracker.
+- Programmatic menus cover dwb xtreme, File, Playback, Video, and Window actions including Settings, Open, Reveal in Finder, Rename, Remove Current from Queue, Clear Queue, New Window, playback controls, speed, scale mode, Four Window Grid, Keep Window On Top, and Auto-hide Titlebar.
 - Developer/debugging support through the Debug Console with filtering, snapshots, export, and optional verbose autoplay tracing.
 
 ## Screenshots
 
 <p align="center">
-  <img src="docs/images/dwb-four-window-grid.png" alt="Four independent dwb player windows arranged in a grid" width="900">
+  <img src="docs/images/dwb-four-window-grid.png" alt="Four independent dwb xtreme windows arranged in a grid" width="900">
 </p>
 
 <p align="center">
-  <img src="docs/images/dwb-queue.png" alt="dwb player Queue Page with search, sort, prefix actions, and total duration" width="900">
+  <img src="docs/images/dwb-queue.png" alt="dwb xtreme Queue Page with search, sort, prefix actions, and total duration" width="900">
 </p>
 
 <p align="center">
-  <img src="docs/images/dwb-settings.png" alt="dwb player Settings window over four playback windows" width="900">
+  <img src="docs/images/dwb-settings.png" alt="dwb xtreme Settings window over four playback windows" width="900">
 </p>
 
 ## Requirements
@@ -111,7 +114,7 @@ Build the app from the repository root:
 The script builds the `dwb` scheme in Release configuration and copies the app bundle to:
 
 ```text
-dist/dwb player.app
+dist/dwb xtreme.app
 ```
 
 The default build path is the standard Xcode/SwiftPM path for the pinned `vlckit-spm` 3.6.0 dependency. Local generated Xcode state under `.tmp/derivedData/` may be cleared when stale absolute package artifact paths are detected after moving the repository. A cached VLCKit products fallback is disabled by default and is only for local development with `DWB_ALLOW_DEV_CACHED_VLCKIT_FALLBACK=1`; it is not release provenance.
@@ -119,7 +122,7 @@ The default build path is the standard Xcode/SwiftPM path for the pinned `vlckit
 It also writes local build metadata to:
 
 ```text
-dist/dwb-player-app-build-info.txt
+dist/dwb-xtreme-app-build-info.txt
 ```
 
 Create a local ZIP package, checksum, manifest, and draft release notes:
@@ -128,7 +131,7 @@ Create a local ZIP package, checksum, manifest, and draft release notes:
 ./scripts/package-release.sh
 ```
 
-Release packaging artifacts are written under a versioned folder such as `dist/release/dwb-player-4.2.2/`. The ZIP workflow verifies the built app and extracted app locally, but it does not publish a GitHub Release, upload assets, notarize, staple, tag, or commit anything.
+Release packaging artifacts are written under a versioned folder such as `dist/release/dwb-xtreme-4.2.2/`. The ZIP workflow verifies the built app and extracted app locally, but it does not publish a GitHub Release, upload assets, notarize, staple, tag, or commit anything.
 
 Public binary release mode is intentionally separate from local packaging. A future credentialed release pass must provide a Developer ID Application identity, notarytool credentials or profile, explicit notarization upload approval, and final Gatekeeper verification:
 

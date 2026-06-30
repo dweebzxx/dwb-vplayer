@@ -497,7 +497,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 4.2.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.dwb.dwb;
-				PRODUCT_NAME = "dwb player";
+				PRODUCT_NAME = "dwb xtreme";
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -514,7 +514,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				MARKETING_VERSION = 4.2.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.dwb.dwb;
-				PRODUCT_NAME = "dwb player";
+				PRODUCT_NAME = "dwb xtreme";
 				SDKROOT = macosx;
 			};
 			name = Debug;

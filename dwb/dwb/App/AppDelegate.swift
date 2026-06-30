@@ -12,6 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func applicationDidFinishLaunching(_ notification: Notification) {
         SettingsWindowController.registerDefaults()
         _ = DebugConsoleController.shared   // eagerly init so it observes settings from launch
+        XtremeAudioController.shared.syncFromDefaults()
         buildMainMenu()
         observeSettings()
         updateSkipMenuItemTitles()
@@ -147,7 +148,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                                    message: "windowCapDenied: context=\(context) cap=\(maxPlayerWindowCount) current=\(windowControllers.count)")
         let alert = NSAlert()
         alert.messageText = "Window limit reached"
-        alert.informativeText = "dwb player supports up to \(maxPlayerWindowCount) player windows."
+        alert.informativeText = "dwb xtreme supports up to \(maxPlayerWindowCount) player windows."
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
         if let sheetWindow = NSApp.keyWindow ?? NSApp.mainWindow {
@@ -420,11 +421,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         // ── App menu ────────────────────────────────────────────────────────
         let appItem = NSMenuItem()
-        appItem.title = "dwb player"
+        appItem.title = "dwb xtreme"
         mainMenu.addItem(appItem)
-        let appMenu = NSMenu(title: "dwb player")
+        let appMenu = NSMenu(title: "dwb xtreme")
         appItem.submenu = appMenu
-        appMenu.addItem(withTitle: "About dwb player",
+        appMenu.addItem(withTitle: "About dwb xtreme",
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                         keyEquivalent: "")
         appMenu.addItem(.separator())
@@ -436,7 +437,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         appMenu.addItem(settingsItem)
 
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit dwb player",
+        appMenu.addItem(withTitle: "Quit dwb xtreme",
                         action: #selector(NSApplication.terminate(_:)),
                         keyEquivalent: "q")
 

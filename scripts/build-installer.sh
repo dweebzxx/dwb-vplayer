@@ -3,10 +3,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
-APP_PATH="$DIST_DIR/dwb player.app"
+APP_PATH="$DIST_DIR/dwb xtreme.app"
 INFO_PLIST="$APP_PATH/Contents/Info.plist"
 EXPECTED_VERSION="4.2.2"
-PKG_NAME="dwb-player-${EXPECTED_VERSION}.pkg"
+PKG_NAME="dwb-xtreme-${EXPECTED_VERSION}.pkg"
 PKG_PATH="$DIST_DIR/$PKG_NAME"
 INSTALLER_INFO_PATH="$DIST_DIR/dwb-installer-build-info.txt"
 INSTALL_LOCATION="/Applications"
@@ -20,7 +20,7 @@ usage() {
 Usage: scripts/build-installer.sh [options]
 
 Options:
-  --skip-app-build              Use existing dist/dwb player.app
+  --skip-app-build              Use existing dist/dwb xtreme.app
   --release                     Build a public installer candidate: Developer ID
                                 sign the app, Developer ID Installer sign the
                                 pkg, notarize, staple, and verify
@@ -210,7 +210,7 @@ fi
 
 # ── App verification ───────────────────────────────────────────────────────
 if [[ ! -d "$APP_PATH" ]]; then
-    printf "ERROR: dist/dwb player.app not found at %s\n" "$APP_PATH" >&2
+    printf "ERROR: dist/dwb xtreme.app not found at %s\n" "$APP_PATH" >&2
     exit 1
 fi
 

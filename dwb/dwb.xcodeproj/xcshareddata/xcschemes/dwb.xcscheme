@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "47D5783C4D997848BC0265A9"
-               BuildableName = "dwb player.app"
+               BuildableName = "dwb xtreme.app"
                BlueprintName = "dwb"
                ReferencedContainer = "container:dwb.xcodeproj">
             </BuildableReference>
@@ -31,7 +31,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "47D5783C4D997848BC0265A9"
-            BuildableName = "dwb player.app"
+            BuildableName = "dwb xtreme.app"
             BlueprintName = "dwb"
             ReferencedContainer = "container:dwb.xcodeproj">
          </BuildableReference>
@@ -54,7 +54,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "47D5783C4D997848BC0265A9"
-            BuildableName = "dwb player.app"
+            BuildableName = "dwb xtreme.app"
             BlueprintName = "dwb"
             ReferencedContainer = "container:dwb.xcodeproj">
          </BuildableReference>
@@ -71,7 +71,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "47D5783C4D997848BC0265A9"
-            BuildableName = "dwb player.app"
+            BuildableName = "dwb xtreme.app"
             BlueprintName = "dwb"
             ReferencedContainer = "container:dwb.xcodeproj">
          </BuildableReference>

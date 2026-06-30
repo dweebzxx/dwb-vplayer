@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_dir="${0:A:h}"
 root_dir="${script_dir:h}"
-app_path="$root_dir/dist/dwb player.app"
+app_path="$root_dir/dist/dwb xtreme.app"
 identity="${DWB_SIGNING_IDENTITY:-}"
 adhoc=0
 timestamp=0
@@ -27,7 +27,7 @@ usage() {
 Usage: scripts/sign-app.sh [options]
 
 Options:
-  --app <path>          App bundle to sign or verify. Default: dist/dwb player.app
+  --app <path>          App bundle to sign or verify. Default: dist/dwb xtreme.app
   --identity <name>     Signing identity name or hash. Default: DWB_SIGNING_IDENTITY
   --adhoc              Sign with ad-hoc identity "-"
   --timestamp          Request timestamp signing for non-ad-hoc identities

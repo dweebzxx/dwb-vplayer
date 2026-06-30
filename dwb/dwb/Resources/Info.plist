@@ -13,7 +13,7 @@
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundleDisplayName</key>
-	<string>dwb player</string>
+	<string>dwb xtreme</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -40,7 +40,7 @@
 				<string>ogm</string>
 			</array>
 			<key>CFBundleTypeName</key>
-			<string>dwb player Video</string>
+			<string>dwb xtreme Video</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>

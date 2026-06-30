@@ -1,4 +1,6 @@
 import Cocoa
+import AVFoundation
+import UniformTypeIdentifiers
 import VLCKitSPM
 
 extension Notification.Name {
@@ -33,9 +35,13 @@ extension Notification.Name {
     /// Shuffle, Replay, Volume, Bookmark) change. BottomRailView observes
     /// this and re-applies button visibility / rebuilds the More menu.
     static let bottomRailButtonVisibilityChanged = Notification.Name("dwb.bottomRailButtonVisibilityChanged")
+    /// Posted when xtreme mode overlay settings change.
+    static let xtremeModeChanged = Notification.Name("dwb.xtremeModeChanged")
+    /// Posted when xtreme audio settings or playback state change.
+    static let xtremeAudioChanged = Notification.Name("dwb.xtremeAudioChanged")
 }
 
-/// Singleton settings panel. Open via dwb > Settings… (Cmd+,).
+/// Singleton settings panel. Open via dwb xtreme > Settings… (Cmd+,).
 /// Sidebar sections: Playback, Controls, Queue & Files, Shortcuts, Advanced, About.
 /// Navigation uses the suite-shared settings pattern (matches dwb skim):
 /// visual-effect sidebar with rounded, suite-accent-selected items.
@@ -124,6 +130,21 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     static let playerWindowOpacityMin: CGFloat = CGFloat(SettingsDefaultsRegistry.Defaults.playerWindowOpacityMin)
     static let playerWindowOpacityMax: CGFloat = CGFloat(SettingsDefaultsRegistry.Defaults.playerWindowOpacityMax)
     static let defaultPlayerWindowOpacityValue: CGFloat = CGFloat(SettingsDefaultsRegistry.Defaults.playerWindowOpacity)
+    static let xtremeModeEnabledKey = SettingsDefaultsRegistry.Keys.xtremeModeEnabled
+    static let xtremeModeGIFBookmarkDataKey = SettingsDefaultsRegistry.Keys.xtremeModeGIFBookmarkData
+    static let xtremeModeOpacityKey = SettingsDefaultsRegistry.Keys.xtremeModeOpacity
+    static let xtremeModeOpacityMin: CGFloat = CGFloat(SettingsDefaultsRegistry.Defaults.xtremeModeOpacityMin)
+    static let xtremeModeOpacityMax: CGFloat = CGFloat(SettingsDefaultsRegistry.Defaults.xtremeModeOpacityMax)
+    static let defaultXtremeModeOpacityValue: CGFloat = CGFloat(SettingsDefaultsRegistry.Defaults.xtremeModeOpacity)
+    static let xtremeAudioEnabledKey = SettingsDefaultsRegistry.Keys.xtremeAudioEnabled
+    static let xtremeAudioMP3BookmarkDataKey = SettingsDefaultsRegistry.Keys.xtremeAudioMP3BookmarkData
+    static let xtremeAudioVolumeKey = SettingsDefaultsRegistry.Keys.xtremeAudioVolume
+    static let xtremeAudioVolumeMin: CGFloat = CGFloat(SettingsDefaultsRegistry.Defaults.xtremeAudioVolumeMin)
+    static let xtremeAudioVolumeMax: CGFloat = CGFloat(SettingsDefaultsRegistry.Defaults.xtremeAudioVolumeMax)
+    static let defaultXtremeAudioVolumeValue: CGFloat = CGFloat(SettingsDefaultsRegistry.Defaults.xtremeAudioVolume)
+    static let xtremeAudioMuteMediaKey = SettingsDefaultsRegistry.Keys.xtremeAudioMuteMedia
+    static let xtremeModeGIFLimitBytes: UInt64 = 50 * 1024 * 1024
+    static let xtremeAudioMP3LimitBytes: UInt64 = 100 * 1024 * 1024
     static let githubURLString = "https://github.com/dweebzxx/dwb-player"
     static let githubIssuesURLString = "https://github.com/dweebzxx/dwb-player/issues"
 
@@ -150,6 +171,91 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     }
     static func playerWindowOpacityPercent(_ opacity: CGFloat) -> Int {
         Int((clampedPlayerWindowOpacity(opacity) * 100.0).rounded())
+    }
+    static func clampedXtremeModeOpacity(_ value: CGFloat) -> CGFloat {
+        guard value.isFinite else { return defaultXtremeModeOpacityValue }
+        return min(xtremeModeOpacityMax, max(xtremeModeOpacityMin, value))
+    }
+    static func currentXtremeModeOpacity() -> CGFloat {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: xtremeModeOpacityKey) != nil else {
+            return defaultXtremeModeOpacityValue
+        }
+        let value = CGFloat(defaults.double(forKey: xtremeModeOpacityKey))
+        let clamped = clampedXtremeModeOpacity(value)
+        if clamped != value {
+            defaults.set(Double(clamped), forKey: xtremeModeOpacityKey)
+        }
+        return clamped
+    }
+    static func xtremeModeOpacityPercent(_ opacity: CGFloat) -> Int {
+        Int((clampedXtremeModeOpacity(opacity) * 100.0).rounded())
+    }
+    static func isXtremeModeEnabled() -> Bool {
+        UserDefaults.standard.bool(forKey: xtremeModeEnabledKey)
+    }
+    static func clampedXtremeAudioVolume(_ value: CGFloat) -> CGFloat {
+        guard value.isFinite else { return defaultXtremeAudioVolumeValue }
+        return min(xtremeAudioVolumeMax, max(xtremeAudioVolumeMin, value))
+    }
+    static func currentXtremeAudioVolume() -> CGFloat {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: xtremeAudioVolumeKey) != nil else {
+            return defaultXtremeAudioVolumeValue
+        }
+        let value = CGFloat(defaults.double(forKey: xtremeAudioVolumeKey))
+        let clamped = clampedXtremeAudioVolume(value)
+        if clamped != value {
+            defaults.set(Double(clamped), forKey: xtremeAudioVolumeKey)
+        }
+        return clamped
+    }
+    static func xtremeAudioVolumePercent(_ volume: CGFloat) -> Int {
+        Int((clampedXtremeAudioVolume(volume) * 100.0).rounded())
+    }
+    static func isXtremeAudioEnabled() -> Bool {
+        UserDefaults.standard.bool(forKey: xtremeAudioEnabledKey)
+    }
+    static func isXtremeAudioMuteMediaEnabled() -> Bool {
+        UserDefaults.standard.bool(forKey: xtremeAudioMuteMediaKey)
+    }
+    static func shouldMuteMediaForXtremeAudio() -> Bool {
+        isXtremeAudioMuteMediaEnabled() && XtremeAudioController.shared.isPlaying
+    }
+    static func resolvedXtremeModeGIFURL() -> URL? {
+        resolvedSecurityScopedBookmarkURL(forKey: xtremeModeGIFBookmarkDataKey, clearStale: true)
+    }
+    static func resolvedXtremeAudioMP3URL() -> URL? {
+        resolvedSecurityScopedBookmarkURL(forKey: xtremeAudioMP3BookmarkDataKey, clearStale: true)
+    }
+    private static func resolvedSecurityScopedBookmarkURL(forKey key: String, clearStale: Bool) -> URL? {
+        let defaults = UserDefaults.standard
+        guard let data = defaults.data(forKey: key) else { return nil }
+        do {
+            var stale = false
+            let url = try URL(resolvingBookmarkData: data,
+                              options: [.withSecurityScope],
+                              relativeTo: nil,
+                              bookmarkDataIsStale: &stale)
+            if stale && clearStale {
+                defaults.removeObject(forKey: key)
+                if key == xtremeModeGIFBookmarkDataKey {
+                    NotificationCenter.default.post(name: .xtremeModeChanged, object: nil)
+                } else if key == xtremeAudioMP3BookmarkDataKey {
+                    NotificationCenter.default.post(name: .xtremeAudioChanged, object: nil)
+                }
+                return nil
+            }
+            return url
+        } catch {
+            defaults.removeObject(forKey: key)
+            return nil
+        }
+    }
+    private static func bookmarkData(for url: URL) throws -> Data {
+        try url.bookmarkData(options: [.withSecurityScope],
+                             includingResourceValuesForKeys: nil,
+                             relativeTo: nil)
     }
     static func vlcBackendVersionText() -> String {
         let version = VLCLibrary.shared().version.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -316,6 +422,8 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         NotificationCenter.default.post(name: .customPrefixValueChanged, object: nil)
         NotificationCenter.default.post(name: .debugConsoleSettingChanged, object: nil)
         NotificationCenter.default.post(name: .bottomRailButtonVisibilityChanged, object: nil)
+        NotificationCenter.default.post(name: .xtremeModeChanged, object: nil)
+        NotificationCenter.default.post(name: .xtremeAudioChanged, object: nil)
     }
     static func validatedSkipDurationSeconds(_ value: Int) -> Int {
         skipDurationOptions.contains(where: { $0.seconds == value }) ? value : defaultSkipDurationSeconds
@@ -372,6 +480,21 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private let windowOpacityPercentLabel = NSTextField(labelWithString: "100%")
     private let windowOpacityResetButton  = NSButton()
 
+    // xtreme section
+    private let xtremeModeCheckbox = NSButton()
+    private let xtremeModeChooseGIFButton = NSButton()
+    private let xtremeModeGIFLabel = NSTextField(labelWithString: "No GIF selected")
+    private let xtremeModeOpacitySlider = NSSlider()
+    private let xtremeModeOpacityPercentLabel = NSTextField(labelWithString: "15%")
+    private let xtremeModeErrorLabel = NSTextField(labelWithString: "")
+    private let xtremeAudioCheckbox = NSButton()
+    private let xtremeAudioChooseMP3Button = NSButton()
+    private let xtremeAudioMP3Label = NSTextField(labelWithString: "No MP3 selected")
+    private let xtremeAudioVolumeSlider = NSSlider()
+    private let xtremeAudioVolumePercentLabel = NSTextField(labelWithString: "50%")
+    private let xtremeAudioMuteMediaCheckbox = NSButton()
+    private let xtremeAudioErrorLabel = NSTextField(labelWithString: "")
+
     // Queue & Files section
     private let customPrefixQueuePageCheckbox          = NSButton()
     private let customPrefixValueTextField             = NSTextField()
@@ -390,7 +513,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private var sidebarButtons: [SettingsSidebarItemButton] = []
     private let detailContainer = NSView()
     private var sectionViews:   [NSView] = []
-    private let sectionNames    = ["Playback", "Controls", "Queue & Files", "Shortcuts", "Advanced", "About"]
+    private let sectionNames    = ["Playback", "Controls", "Queue & Files", "Shortcuts", "xtreme", "Advanced", "About"]
 
     // MARK: - Init
 
@@ -521,6 +644,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             buildControlsSection(),
             buildQueueFilesSection(),
             buildShortcutsSection(),
+            buildXtremeSection(),
             buildAdvancedSection(),
             buildAboutSection(),
         ]
@@ -676,7 +800,9 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         let section4 = buildSection(title: "Window chrome", rows: [
             buildRow(label: nil, control: autoHideTitlebarCheckbox),
             buildRow(label: nil, control: completeVideoWindowModeCheckbox),
-            buildRow(label: "Window opacity", control: opacityStack)
+            buildRow(label: "Window opacity",
+                     control: opacityStack,
+                     helperText: "Window opacity is disabled while xtreme mode is active.")
         ])
 
         return buildSectionContainer(sections: [section1, section1b, section4])
@@ -728,6 +854,84 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         return buildSectionContainer(sections: [section1, section2, section3])
     }
 
+    // MARK: - Section: xtreme
+
+    private func buildXtremeSection() -> NSView {
+        configure(xtremeModeCheckbox, title: "Enable xtreme mode", state: Self.isXtremeModeEnabled())
+        xtremeModeChooseGIFButton.title = "Choose GIF\u{2026}"
+        xtremeModeChooseGIFButton.bezelStyle = .rounded
+        xtremeModeChooseGIFButton.target = self
+        xtremeModeChooseGIFButton.action = #selector(chooseXtremeModeGIF(_:))
+        xtremeModeChooseGIFButton.translatesAutoresizingMaskIntoConstraints = false
+
+        configureFileLabel(xtremeModeGIFLabel)
+        configureErrorLabel(xtremeModeErrorLabel)
+
+        xtremeModeOpacitySlider.minValue = Double(Self.xtremeModeOpacityMin * 100.0)
+        xtremeModeOpacitySlider.maxValue = Double(Self.xtremeModeOpacityMax * 100.0)
+        xtremeModeOpacitySlider.target = self
+        xtremeModeOpacitySlider.action = #selector(xtremeModeOpacitySliderChanged(_:))
+        xtremeModeOpacitySlider.widthAnchor.constraint(equalToConstant: 200).isActive = true
+
+        configurePercentLabel(xtremeModeOpacityPercentLabel)
+        let modeOpacityStack = NSStackView(views: [xtremeModeOpacitySlider, xtremeModeOpacityPercentLabel])
+        modeOpacityStack.orientation = .horizontal
+        modeOpacityStack.spacing = 10
+
+        let gifPickerStack = NSStackView(views: [xtremeModeChooseGIFButton, xtremeModeGIFLabel])
+        gifPickerStack.orientation = .horizontal
+        gifPickerStack.alignment = .firstBaseline
+        gifPickerStack.spacing = 10
+
+        let modeSection = buildSection(title: "xtreme mode", rows: [
+            buildRow(label: nil, control: xtremeModeCheckbox,
+                     helperText: "Window opacity is disabled while xtreme mode is active."),
+            buildRow(label: "GIF overlay", control: gifPickerStack,
+                     helperText: "GIF files only, up to 50 MB."),
+            buildRow(label: "Overlay opacity", control: modeOpacityStack),
+            buildRow(label: nil, control: xtremeModeErrorLabel)
+        ])
+
+        configure(xtremeAudioCheckbox, title: "Enable xtreme audio", state: Self.isXtremeAudioEnabled())
+        xtremeAudioChooseMP3Button.title = "Choose MP3\u{2026}"
+        xtremeAudioChooseMP3Button.bezelStyle = .rounded
+        xtremeAudioChooseMP3Button.target = self
+        xtremeAudioChooseMP3Button.action = #selector(chooseXtremeAudioMP3(_:))
+        xtremeAudioChooseMP3Button.translatesAutoresizingMaskIntoConstraints = false
+
+        configureFileLabel(xtremeAudioMP3Label)
+        configureErrorLabel(xtremeAudioErrorLabel)
+
+        xtremeAudioVolumeSlider.minValue = Double(Self.xtremeAudioVolumeMin * 100.0)
+        xtremeAudioVolumeSlider.maxValue = Double(Self.xtremeAudioVolumeMax * 100.0)
+        xtremeAudioVolumeSlider.target = self
+        xtremeAudioVolumeSlider.action = #selector(xtremeAudioVolumeSliderChanged(_:))
+        xtremeAudioVolumeSlider.widthAnchor.constraint(equalToConstant: 200).isActive = true
+
+        configurePercentLabel(xtremeAudioVolumePercentLabel)
+        let audioVolumeStack = NSStackView(views: [xtremeAudioVolumeSlider, xtremeAudioVolumePercentLabel])
+        audioVolumeStack.orientation = .horizontal
+        audioVolumeStack.spacing = 10
+
+        configure(xtremeAudioMuteMediaCheckbox, title: "Mute video audio while xtreme audio is playing", state: Self.isXtremeAudioMuteMediaEnabled())
+
+        let mp3PickerStack = NSStackView(views: [xtremeAudioChooseMP3Button, xtremeAudioMP3Label])
+        mp3PickerStack.orientation = .horizontal
+        mp3PickerStack.alignment = .firstBaseline
+        mp3PickerStack.spacing = 10
+
+        let audioSection = buildSection(title: "xtreme audio", rows: [
+            buildRow(label: nil, control: xtremeAudioCheckbox),
+            buildRow(label: "MP3 loop", control: mp3PickerStack,
+                     helperText: "MP3 files only, up to 100 MB."),
+            buildRow(label: "xtreme audio volume", control: audioVolumeStack),
+            buildRow(label: nil, control: xtremeAudioMuteMediaCheckbox),
+            buildRow(label: nil, control: xtremeAudioErrorLabel)
+        ])
+
+        return buildSectionContainer(sections: [modeSection, audioSection])
+    }
+
     // MARK: - Section: Advanced
 
     private func buildAdvancedSection() -> NSView {
@@ -757,7 +961,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
 
         let section3 = buildSection(title: "Reset", rows: [
             buildRow(label: nil, control: restoreDefaultsButton,
-                     helperText: "Restores dwb player preferences. Media files, queues, and bookmarks are not deleted.")
+                     helperText: "Restores dwb xtreme preferences. Media files, queues, and bookmarks are not deleted.")
         ])
 
         return buildSectionContainer(sections: [section1, section2, section3])
@@ -788,7 +992,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             iconView.heightAnchor.constraint(equalToConstant: 108)
         ])
 
-        let nameLabel     = makeLabel("dwb player", size: 17, weight: .semibold)
+        let nameLabel     = makeLabel("dwb xtreme", size: 17, weight: .semibold)
         let versionLabel  = makeLabel("Version \(version)  ·  Build \(build)", color: .secondaryLabelColor)
         let descLabel     = makeLabel("Local media playback for macOS", color: .secondaryLabelColor)
         let licenseLabel  = makeLabel("MIT License", color: .tertiaryLabelColor)
@@ -868,7 +1072,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private static let shortcutGroups: [ShortcutGroup] = [
         .init(title: "App & Files", items: [
             .init(title: "Open Settings", shortcut: "⌘,"),
-            .init(title: "Quit dwb player", shortcut: "⌘Q"),
+            .init(title: "Quit dwb xtreme", shortcut: "⌘Q"),
             .init(title: "Open File", shortcut: "⌘O"),
             .init(title: "Reveal in Finder", shortcut: "⇧⌘R"),
             .init(title: "Clear Queue", shortcut: "⇧⌘⌫"),
@@ -929,6 +1133,30 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         // switch semantics, focus, and accessibility are unchanged).
         btn.contentTintColor = .labelColor
         btn.translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    private func configurePercentLabel(_ label: NSTextField) {
+        label.font = .systemFont(ofSize: NSFont.systemFontSize)
+        label.textColor = .secondaryLabelColor
+        label.alignment = .right
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.widthAnchor.constraint(equalToConstant: 46).isActive = true
+    }
+
+    private func configureFileLabel(_ label: NSTextField) {
+        label.font = .systemFont(ofSize: NSFont.systemFontSize)
+        label.textColor = .secondaryLabelColor
+        label.lineBreakMode = .byTruncatingMiddle
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.widthAnchor.constraint(lessThanOrEqualToConstant: 220).isActive = true
+    }
+
+    private func configureErrorLabel(_ label: NSTextField) {
+        label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        label.textColor = .systemRed
+        label.lineBreakMode = .byWordWrapping
+        label.preferredMaxLayoutWidth = 360
+        label.translatesAutoresizingMaskIntoConstraints = false
     }
 
     /// Suite accent #4C62A8 — matches dwb skim's DwbSkimProductSpec.accent.
@@ -1159,6 +1387,25 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             DebugConsoleController.log("settings", "queuePanelOpenAtLaunch=\(enabled)")
             return
         }
+        if sender === xtremeModeCheckbox {
+            UserDefaults.standard.set(enabled, forKey: Self.xtremeModeEnabledKey)
+            NotificationCenter.default.post(name: .xtremeModeChanged, object: nil)
+            updateWindowOpacityEnabledState()
+            DebugConsoleController.log("settings", "xtremeMode=\(enabled)")
+            return
+        }
+        if sender === xtremeAudioCheckbox {
+            UserDefaults.standard.set(enabled, forKey: Self.xtremeAudioEnabledKey)
+            NotificationCenter.default.post(name: .xtremeAudioChanged, object: nil)
+            DebugConsoleController.log("settings", "xtremeAudio=\(enabled)")
+            return
+        }
+        if sender === xtremeAudioMuteMediaCheckbox {
+            UserDefaults.standard.set(enabled, forKey: Self.xtremeAudioMuteMediaKey)
+            NotificationCenter.default.post(name: .xtremeAudioChanged, object: nil)
+            DebugConsoleController.log("settings", "xtremeAudioMuteMedia=\(enabled)")
+            return
+        }
         let bottomRailKey: String?
         switch sender {
         case bottomRailShowXCheckbox:        bottomRailKey = Self.bottomRailShowXKey
@@ -1230,10 +1477,121 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         DebugConsoleController.log("settings", "playerWindowOpacity=100%")
     }
 
+    @objc private func chooseXtremeModeGIF(_ sender: NSButton) {
+        let panel = NSOpenPanel()
+        panel.title = "Choose GIF"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.gif]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard validateXtremeFile(url: url,
+                                 fileExtension: "gif",
+                                 maxBytes: Self.xtremeModeGIFLimitBytes,
+                                 featureName: "xtreme mode",
+                                 errorLabel: xtremeModeErrorLabel) else { return }
+        do {
+            UserDefaults.standard.set(try Self.bookmarkData(for: url), forKey: Self.xtremeModeGIFBookmarkDataKey)
+            xtremeModeErrorLabel.stringValue = ""
+            updateXtremeFileLabels()
+            NotificationCenter.default.post(name: .xtremeModeChanged, object: nil)
+            DebugConsoleController.log("settings", "xtremeModeGIF=\(url.lastPathComponent)")
+        } catch {
+            presentXtremeFileError("The GIF could not be saved for xtreme mode.\n\n\(error.localizedDescription)",
+                                   label: xtremeModeErrorLabel)
+        }
+    }
+
+    @objc private func chooseXtremeAudioMP3(_ sender: NSButton) {
+        let panel = NSOpenPanel()
+        panel.title = "Choose MP3"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        if let mp3Type = UTType(filenameExtension: "mp3") {
+            panel.allowedContentTypes = [mp3Type]
+        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard validateXtremeFile(url: url,
+                                 fileExtension: "mp3",
+                                 maxBytes: Self.xtremeAudioMP3LimitBytes,
+                                 featureName: "xtreme audio",
+                                 errorLabel: xtremeAudioErrorLabel) else { return }
+        do {
+            UserDefaults.standard.set(try Self.bookmarkData(for: url), forKey: Self.xtremeAudioMP3BookmarkDataKey)
+            xtremeAudioErrorLabel.stringValue = ""
+            updateXtremeFileLabels()
+            NotificationCenter.default.post(name: .xtremeAudioChanged, object: nil)
+            DebugConsoleController.log("settings", "xtremeAudioMP3=\(url.lastPathComponent)")
+        } catch {
+            presentXtremeFileError("The MP3 could not be saved for xtreme audio.\n\n\(error.localizedDescription)",
+                                   label: xtremeAudioErrorLabel)
+        }
+    }
+
+    @objc private func xtremeModeOpacitySliderChanged(_ sender: NSSlider) {
+        let opacity = Self.clampedXtremeModeOpacity(CGFloat(sender.doubleValue / 100.0))
+        UserDefaults.standard.set(Double(opacity), forKey: Self.xtremeModeOpacityKey)
+        updateXtremeModeOpacityControls(opacity)
+        NotificationCenter.default.post(name: .xtremeModeChanged, object: nil)
+        DebugConsoleController.log("settings", "xtremeModeOpacity=\(Self.xtremeModeOpacityPercent(opacity))%")
+    }
+
+    @objc private func xtremeAudioVolumeSliderChanged(_ sender: NSSlider) {
+        let volume = Self.clampedXtremeAudioVolume(CGFloat(sender.doubleValue / 100.0))
+        UserDefaults.standard.set(Double(volume), forKey: Self.xtremeAudioVolumeKey)
+        updateXtremeAudioVolumeControls(volume)
+        NotificationCenter.default.post(name: .xtremeAudioChanged, object: nil)
+        DebugConsoleController.log("settings", "xtremeAudioVolume=\(Self.xtremeAudioVolumePercent(volume))%")
+    }
+
+    private func validateXtremeFile(url: URL,
+                                    fileExtension expectedExtension: String,
+                                    maxBytes: UInt64,
+                                    featureName: String,
+                                    errorLabel: NSTextField) -> Bool {
+        let actualExtension = url.pathExtension.lowercased()
+        guard actualExtension == expectedExtension else {
+            presentXtremeFileError("Choose a .\(expectedExtension) file for \(featureName).", label: errorLabel)
+            return false
+        }
+        do {
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            guard values.isRegularFile == true else {
+                presentXtremeFileError("Choose a regular .\(expectedExtension) file for \(featureName).", label: errorLabel)
+                return false
+            }
+            let byteCount = UInt64(max(0, values.fileSize ?? 0))
+            guard byteCount <= maxBytes else {
+                let limitMB = maxBytes / 1024 / 1024
+                presentXtremeFileError("The selected .\(expectedExtension) file is larger than \(limitMB) MB.", label: errorLabel)
+                return false
+            }
+            return true
+        } catch {
+            presentXtremeFileError("The selected file could not be checked.\n\n\(error.localizedDescription)", label: errorLabel)
+            return false
+        }
+    }
+
+    private func presentXtremeFileError(_ message: String, label: NSTextField) {
+        label.stringValue = message
+        let alert = NSAlert()
+        alert.messageText = "Unable to Use File"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        if let window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
+    }
+
     @objc private func restoreAllSettingsToDefault(_ sender: NSButton) {
         let alert = NSAlert()
         alert.messageText = "Restore all settings to default?"
-        alert.informativeText = "This resets dwb player preferences. It does not delete media files, queues, or bookmarks."
+        alert.informativeText = "This resets dwb xtreme preferences. It does not delete media files, queues, or bookmarks."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Restore Defaults")
         alert.addButton(withTitle: "Cancel")
@@ -1340,6 +1698,9 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         bottomRailShowReplayCheckbox.state     = Self.isBottomRailShowReplayEnabled()   ? .on : .off
         bottomRailShowVolumeCheckbox.state     = Self.isBottomRailShowVolumeEnabled()   ? .on : .off
         bottomRailShowBookmarkCheckbox.state   = Self.isBottomRailShowBookmarkEnabled() ? .on : .off
+        xtremeModeCheckbox.state               = Self.isXtremeModeEnabled()             ? .on : .off
+        xtremeAudioCheckbox.state              = Self.isXtremeAudioEnabled()            ? .on : .off
+        xtremeAudioMuteMediaCheckbox.state     = Self.isXtremeAudioMuteMediaEnabled()   ? .on : .off
 
         skipDurationPopup.selectItem(withTag: Self.currentSkipDurationSeconds())
         syncPlaybackSpeedControlsFromTarget()
@@ -1354,6 +1715,10 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             chromeAutohideThresholdPopup.selectItem(withTag: Self.chromeThresholdTag(for: 3.0))
         }
         syncWindowOpacityControlsFromTargetOrDefault()
+        updateXtremeFileLabels()
+        updateXtremeModeOpacityControls(Self.currentXtremeModeOpacity())
+        updateXtremeAudioVolumeControls(Self.currentXtremeAudioVolume())
+        updateWindowOpacityEnabledState()
     }
 
     private func syncWindowOpacityControlsFromTargetOrDefault() {
@@ -1373,6 +1738,39 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         let clamped = Self.clampedPlayerWindowOpacity(opacity)
         windowOpacitySlider.doubleValue = Double(clamped * 100.0)
         windowOpacityPercentLabel.stringValue = "\(Self.playerWindowOpacityPercent(clamped))%"
+        updateWindowOpacityEnabledState()
+    }
+
+    private func updateWindowOpacityEnabledState() {
+        let enabled = !Self.isXtremeModeEnabled()
+        windowOpacitySlider.isEnabled = enabled
+        windowOpacityResetButton.isEnabled = enabled
+        windowOpacityPercentLabel.alphaValue = enabled ? 1.0 : 0.55
+    }
+
+    private func updateXtremeModeOpacityControls(_ opacity: CGFloat) {
+        let clamped = Self.clampedXtremeModeOpacity(opacity)
+        xtremeModeOpacitySlider.doubleValue = Double(clamped * 100.0)
+        xtremeModeOpacityPercentLabel.stringValue = "\(Self.xtremeModeOpacityPercent(clamped))%"
+    }
+
+    private func updateXtremeAudioVolumeControls(_ volume: CGFloat) {
+        let clamped = Self.clampedXtremeAudioVolume(volume)
+        xtremeAudioVolumeSlider.doubleValue = Double(clamped * 100.0)
+        xtremeAudioVolumePercentLabel.stringValue = "\(Self.xtremeAudioVolumePercent(clamped))%"
+    }
+
+    private func updateXtremeFileLabels() {
+        if let url = Self.resolvedXtremeModeGIFURL() {
+            xtremeModeGIFLabel.stringValue = url.lastPathComponent
+        } else {
+            xtremeModeGIFLabel.stringValue = "No GIF selected"
+        }
+        if let url = Self.resolvedXtremeAudioMP3URL() {
+            xtremeAudioMP3Label.stringValue = url.lastPathComponent
+        } else {
+            xtremeAudioMP3Label.stringValue = "No MP3 selected"
+        }
     }
 
     private func targetPlayerWindowController() -> PlayerWindowController? {
@@ -1417,6 +1815,90 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
         orderAbovePlayerWindows()
+    }
+}
+
+// MARK: - xtreme audio loop
+
+final class XtremeAudioController {
+    static let shared = XtremeAudioController()
+
+    private var player: AVAudioPlayer?
+    private var scopedURL: URL?
+    private var securityScopeActive = false
+
+    var isPlaying: Bool {
+        player?.isPlaying == true
+    }
+
+    private init() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(xtremeAudioSettingsDidChange),
+            name: .xtremeAudioChanged,
+            object: nil
+        )
+    }
+
+    func syncFromDefaults() {
+        guard SettingsWindowController.isXtremeAudioEnabled(),
+              let url = SettingsWindowController.resolvedXtremeAudioMP3URL() else {
+            stopLoop(reason: "disabled-or-missing")
+            return
+        }
+
+        let shouldReplace = scopedURL?.standardizedFileURL.path != url.standardizedFileURL.path || player == nil
+        if shouldReplace {
+            stopLoop(reason: "replace")
+            startSecurityScope(for: url)
+            do {
+                let nextPlayer = try AVAudioPlayer(contentsOf: url)
+                nextPlayer.numberOfLoops = -1
+                nextPlayer.volume = Float(SettingsWindowController.currentXtremeAudioVolume())
+                nextPlayer.prepareToPlay()
+                nextPlayer.play()
+                player = nextPlayer
+                scopedURL = url
+                DebugConsoleController.log("audio", "xtremeAudioStart: \(url.lastPathComponent)")
+            } catch {
+                DebugConsoleController.log(level: .error,
+                                           category: "audio",
+                                           message: "xtremeAudioStartFailed: \(error.localizedDescription)")
+                stopLoop(reason: "start-failed")
+            }
+        } else {
+            player?.volume = Float(SettingsWindowController.currentXtremeAudioVolume())
+            if player?.isPlaying != true {
+                player?.play()
+            }
+        }
+
+        NotificationCenter.default.post(name: .xtremeAudioChanged, object: self)
+    }
+
+    private func startSecurityScope(for url: URL) {
+        scopedURL = url
+        securityScopeActive = url.startAccessingSecurityScopedResource()
+    }
+
+    private func stopLoop(reason: String) {
+        let wasPlaying = player?.isPlaying == true
+        player?.stop()
+        player = nil
+        if securityScopeActive {
+            scopedURL?.stopAccessingSecurityScopedResource()
+        }
+        scopedURL = nil
+        securityScopeActive = false
+        if wasPlaying {
+            DebugConsoleController.log("audio", "xtremeAudioStop: reason=\(reason)")
+            NotificationCenter.default.post(name: .xtremeAudioChanged, object: self)
+        }
+    }
+
+    @objc private func xtremeAudioSettingsDidChange(_ notification: Notification) {
+        guard notification.object as AnyObject? !== self else { return }
+        syncFromDefaults()
     }
 }
 

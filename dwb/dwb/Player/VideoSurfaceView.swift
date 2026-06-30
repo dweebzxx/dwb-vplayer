@@ -296,3 +296,23 @@ final class ImageSurfaceView: NSImageView {
         return MediaDropRouting.performDrop(sender, in: window)
     }
 }
+
+final class XtremeOverlayImageView: NSImageView {
+    var representedURL: URL?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        imageScaling = .scaleAxesIndependently
+        imageAlignment = .alignCenter
+        layer?.masksToBounds = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not used – UI is programmatic")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+}

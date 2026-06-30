@@ -68,7 +68,7 @@ struct PlaybackSpeedOption: Equatable {
 class PlayerWindowController: NSWindowController {
 
     private static var nextDebugOrdinal = 1
-    private static let defaultWindowTitle = "dwb player"
+    private static let defaultWindowTitle = "dwb xtreme"
 
     private(set) var player: VLCMediaPlayer!
     private var videoSurface: VideoSurfaceView!
@@ -383,6 +383,13 @@ class PlayerWindowController: NSWindowController {
     private var gifCurrentFrameStartedMT: TimeInterval = 0
     private var gifCurrentFrameRemainingDelay: TimeInterval = 0
 
+    // MARK: - xtreme mode overlay
+
+    private var xtremeOverlayView: XtremeOverlayImageView?
+    private var xtremeOverlayGIFAnimation: MediaFileSupport.GIFAnimation?
+    private var xtremeOverlayFrameTimer: Timer?
+    private var xtremeOverlayFrameIndex = 0
+
     // MARK: - Layout constants
 
     private let transportHeight: CGFloat = 48
@@ -454,6 +461,11 @@ class PlayerWindowController: NSWindowController {
         cv.addSubview(imgView)
         imageDisplayView = imgView
 
+        let overlayView = XtremeOverlayImageView(frame: .zero)
+        overlayView.isHidden = true
+        cv.addSubview(overlayView)
+        xtremeOverlayView = overlayView
+
         transport = TransportControlsView(frame: .zero)
         cv.addSubview(transport)
 
@@ -486,6 +498,7 @@ class PlayerWindowController: NSWindowController {
         installCenteredTitleLabel(in: win)
         updateWindowTitle(Self.defaultWindowTitle)
         applyWindowOpacity(reason: "initial-window", force: true)
+        applyXtremeModeSettings(reason: "initial-window")
 
         applyWindowedChromeModeIfNeeded()
         layoutPlayerViews()
@@ -634,10 +647,32 @@ class PlayerWindowController: NSWindowController {
             name: .bookmarkDidChange,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(xtremeModeSettingDidChange),
+            name: .xtremeModeChanged,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(xtremeAudioSettingDidChange),
+            name: .xtremeAudioChanged,
+            object: nil
+        )
     }
 
     @objc private func bookmarkDidChange() {
         refreshQueueDisplays()
+    }
+
+    @objc private func xtremeModeSettingDidChange() {
+        applyXtremeModeSettings(reason: "settings")
+        applyWindowOpacity(reason: "xtreme-mode-settings", force: true)
+    }
+
+    @objc private func xtremeAudioSettingDidChange() {
+        applyWindowAudioState(reason: "xtreme-audio-settings")
+        transport.update()
     }
 
     var isTextEntryFocused: Bool {
@@ -946,9 +981,95 @@ class PlayerWindowController: NSWindowController {
 
         // Image display view always matches videoSurface — covers both fullscreen and windowed.
         imageDisplayView?.frame = videoSurface.frame
+        xtremeOverlayView?.frame = videoSurface.frame
 
         applyScaleMode()
         positionVideoTitleOverlay()
+    }
+
+    // MARK: - xtreme mode overlay
+
+    private func applyXtremeModeSettings(reason: String) {
+        guard let overlayView = xtremeOverlayView else { return }
+        overlayView.alphaValue = SettingsWindowController.currentXtremeModeOpacity()
+        overlayView.frame = videoSurface.frame
+
+        guard SettingsWindowController.isXtremeModeEnabled(),
+              let url = SettingsWindowController.resolvedXtremeModeGIFURL() else {
+            clearXtremeOverlay(reason: reason)
+            return
+        }
+
+        let currentPath = overlayView.representedURL?.standardizedFileURL.path
+        if currentPath != url.standardizedFileURL.path || xtremeOverlayGIFAnimation == nil {
+            loadXtremeOverlayGIF(url: url, reason: reason)
+        } else {
+            overlayView.isHidden = false
+        }
+    }
+
+    private func loadXtremeOverlayGIF(url: URL, reason: String) {
+        clearXtremeOverlay(reason: "reload-\(reason)")
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess { url.stopAccessingSecurityScopedResource() }
+        }
+
+        guard let animation = MediaFileSupport.loadGIFAnimation(for: url),
+              !animation.frames.isEmpty else {
+            xtremeOverlayView?.representedURL = nil
+            DebugConsoleController.log(level: .error,
+                                       category: "media",
+                                       message: "xtremeModeGIFLoadFailed: \(url.lastPathComponent)")
+            return
+        }
+
+        xtremeOverlayGIFAnimation = animation
+        xtremeOverlayFrameIndex = 0
+        xtremeOverlayView?.representedURL = url
+        xtremeOverlayView?.alphaValue = SettingsWindowController.currentXtremeModeOpacity()
+        setXtremeOverlayFrame(animation.frames[0])
+        xtremeOverlayView?.isHidden = false
+        scheduleNextXtremeOverlayFrame(after: animation.frameDurations[0])
+        DebugConsoleController.log("media", "xtremeModeOverlay: \(url.lastPathComponent)")
+    }
+
+    private func clearXtremeOverlay(reason: String) {
+        xtremeOverlayFrameTimer?.invalidate()
+        xtremeOverlayFrameTimer = nil
+        xtremeOverlayGIFAnimation = nil
+        xtremeOverlayFrameIndex = 0
+        xtremeOverlayView?.image = nil
+        xtremeOverlayView?.representedURL = nil
+        xtremeOverlayView?.isHidden = true
+        DebugConsoleController.log("media", "xtremeModeOverlayClear: reason=\(reason)")
+    }
+
+    private func setXtremeOverlayFrame(_ frame: CGImage) {
+        xtremeOverlayView?.image = NSImage(cgImage: frame,
+                                           size: NSSize(width: frame.width, height: frame.height))
+    }
+
+    private func scheduleNextXtremeOverlayFrame(after delay: TimeInterval) {
+        xtremeOverlayFrameTimer?.invalidate()
+        guard SettingsWindowController.isXtremeModeEnabled(),
+              xtremeOverlayView?.isHidden == false else { return }
+        xtremeOverlayFrameTimer = Timer.scheduledTimer(withTimeInterval: max(0.02, delay),
+                                                       repeats: false) { [weak self] _ in
+            self?.advanceXtremeOverlayFrame()
+        }
+    }
+
+    private func advanceXtremeOverlayFrame() {
+        guard SettingsWindowController.isXtremeModeEnabled(),
+              let animation = xtremeOverlayGIFAnimation,
+              !animation.frames.isEmpty else {
+            clearXtremeOverlay(reason: "advance-disabled")
+            return
+        }
+        xtremeOverlayFrameIndex = (xtremeOverlayFrameIndex + 1) % animation.frames.count
+        setXtremeOverlayFrame(animation.frames[xtremeOverlayFrameIndex])
+        scheduleNextXtremeOverlayFrame(after: animation.frameDurations[xtremeOverlayFrameIndex])
     }
 
     // MARK: - Video title overlay
@@ -3198,8 +3319,9 @@ class PlayerWindowController: NSWindowController {
         if clampedVolume != windowVolume {
             windowVolume = clampedVolume
         }
-        let appliedVolume: Int32 = windowMuted ? 0 : clampedVolume
-        let nextState = (volume: appliedVolume, muted: windowMuted)
+        let effectiveMuted = windowMuted || SettingsWindowController.shouldMuteMediaForXtremeAudio()
+        let appliedVolume: Int32 = effectiveMuted ? 0 : clampedVolume
+        let nextState = (volume: appliedVolume, muted: effectiveMuted)
         let changed = lastAppliedAudioState?.volume != nextState.volume || lastAppliedAudioState?.muted != nextState.muted
         if force || changed {
             // P50: audio.volume= calls config_PutInt (VLCKit global rwlock write) when the audio
@@ -3211,7 +3333,7 @@ class PlayerWindowController: NSWindowController {
             // Only log when something actually changed or a caller forced the apply.
             // Unconditional logging here contributed to the per-window-start log
             // storms that saturated the debug console during multi-window playback.
-            DebugConsoleController.log("audio", "apply: window=\(debugIdentity) reason=\(reason) storedVolume=\(windowVolume) appliedVolume=\(appliedVolume) muted=\(windowMuted) forced=\(force ? 1 : 0)")
+            DebugConsoleController.log("audio", "apply: window=\(debugIdentity) reason=\(reason) storedVolume=\(windowVolume) appliedVolume=\(appliedVolume) muted=\(windowMuted) xtremeMuted=\(effectiveMuted && !windowMuted) forced=\(force ? 1 : 0)")
         } else {
             // P50: Skipping redundant VLCKit config write — state unchanged, no global lock acquired.
             DebugConsoleController.log("audio", "applySkip: window=\(debugIdentity) reason=\(reason) storedVolume=\(windowVolume) appliedVolume=\(appliedVolume) noChange=1 configWriteAvoided=1")
@@ -3278,7 +3400,8 @@ class PlayerWindowController: NSWindowController {
             windowOpacity = clamped
         }
 
-        let targetAlpha: CGFloat = (isFullscreen || isEnteringFullscreen || isExitingFullscreen) ? 1.0 : clamped
+        let xtremeModeActive = SettingsWindowController.isXtremeModeEnabled()
+        let targetAlpha: CGFloat = (isFullscreen || isEnteringFullscreen || isExitingFullscreen || xtremeModeActive) ? 1.0 : clamped
         if force || abs(win.alphaValue - targetAlpha) > 0.0001 {
             win.alphaValue = targetAlpha
             DebugConsoleController.log("window", "opacityApply: window=\(debugIdentity) reason=\(reason) stored=\(SettingsWindowController.playerWindowOpacityPercent(windowOpacity))% applied=\(SettingsWindowController.playerWindowOpacityPercent(targetAlpha))%")
@@ -3548,6 +3671,7 @@ class PlayerWindowController: NSWindowController {
     override func close() {
         cancelPendingFolderScan()
         resetPlaybackCompletionSignals(reason: "window-close")
+        clearXtremeOverlay(reason: "window-close")
         if currentItemIsImage {
             clearImageSlideshowState()
         } else if player.isPlaying {
