@@ -149,7 +149,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     static let xtremeAudioAllowedContentTypes: [UTType] = ["mp3", "m4a"].compactMap {
         UTType(filenameExtension: $0)
     }
-    static let githubURLString = "https://github.com/dweebzxx/dwb-player"
+    static let githubURLString = "https://github.com/dweebzxx/dwb-player/tree/xtreme"
     static let githubIssuesURLString = "https://github.com/dweebzxx/dwb-player/issues"
 
     // MARK: - Static helpers

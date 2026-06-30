@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/dwb-icon.png" alt="dwb xtreme app icon" width="144">
+  <img src="docs/images/dwb-xtreme-icon.png" alt="dwb xtreme app icon" width="144">
 </p>
 
 <h1 align="center">dwb xtreme</h1>
@@ -14,7 +14,7 @@
 
 ## Overview
 
-dwb xtreme is a native Swift/AppKit media player for macOS 13 and newer. Version 4.2.2 focuses on local media playback, fast queue building, independent player windows, Finder-style file ordering, and direct controls for working through files on disk.
+dwb xtreme is a native Swift/AppKit media player for macOS 13 and newer. Version 1.3.0 focuses on local media playback, fast queue building, independent player windows, Finder-style file ordering, and direct controls for working through files on disk.
 
 Playback is powered by VLCKit through Swift Package Manager. dwb xtreme is local-only: it does not provide streaming, cloud sync, telemetry, transcoding, or media-library management.
 
@@ -92,7 +92,7 @@ Playback is powered by VLCKit through Swift Package Manager. dwb xtreme is local
 </p>
 
 <p align="center">
-  <img src="docs/images/dwb-settings.png" alt="dwb xtreme Settings window over four playback windows" width="900">
+  <img src="docs/images/dwb-xtreme-settings.png" alt="dwb xtreme Settings window over four playback windows" width="900">
 </p>
 
 ## Requirements
@@ -131,7 +131,7 @@ Create a local ZIP package, checksum, manifest, and draft release notes:
 ./scripts/package-release.sh
 ```
 
-Release packaging artifacts are written under a versioned folder such as `dist/release/dwb-xtreme-4.2.2/`. The ZIP workflow verifies the built app and extracted app locally, but it does not publish a GitHub Release, upload assets, notarize, staple, tag, or commit anything.
+Release packaging artifacts are written under a versioned folder such as `dist/release/dwb-xtreme-1.3.0/`. The ZIP workflow verifies the built app and extracted app locally, but it does not publish a GitHub Release, upload assets, notarize, staple, tag, or commit anything.
 
 Public binary release mode is intentionally separate from local packaging. A future credentialed release pass must provide a Developer ID Application identity, notarytool credentials or profile, explicit notarization upload approval, and final Gatekeeper verification:
 

@@ -7,8 +7,8 @@ root_dir="${script_dir:h}"
 app_path="$root_dir/dist/dwb xtreme.app"
 release_root="$root_dir/dist/release"
 output_dir=""
-version="4.2.2"
-build="4.2.2"
+version="1.3.0"
+build="1.3.0"
 skip_build=0
 release_mode=0
 notarize=0
@@ -22,8 +22,8 @@ Usage: scripts/package-release.sh [options]
 Options:
   --app <path>          App bundle to package. Default: dist/dwb xtreme.app
   --output-dir <path>   Release artifact directory. Default: dist/release/dwb-xtreme-<version>
-  --version <version>   Expected app/release version. Default: 4.2.2
-  --build <build>       Expected bundle build number. Default: 4.2.2
+  --version <version>   Expected app/release version. Default: 1.3.0
+  --build <build>       Expected bundle build number. Default: 1.3.0
   --skip-build          Package the existing app after verification
   --release             Developer ID sign, notarize, staple, and verify a public
                         binary release artifact
