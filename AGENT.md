@@ -67,6 +67,6 @@ This checkout is the `xtreme` split-off branch/worktree for `dwb xtreme`. Keep f
 ## Project Notes
 
 - The public-facing app naming must remain uniform as `dwb xtreme` in menus, bundle/display names, settings/about copy, and default player-window titles unless a future prompt explicitly renames the app.
-- README describes version 4.2.2 and macOS 13+ requirements.
+- README describes version 1.3.0 and macOS 13+ requirements.
 - VLCKit is resolved through Swift Package Manager using the pinned dependency in the Xcode project workspace state.
 - Local source builds use ad-hoc signing by default; Developer ID signing, notarization, stapling, uploads, and public release publication require explicit authorization.
