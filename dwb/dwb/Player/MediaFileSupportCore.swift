@@ -7,6 +7,7 @@ enum MediaFileSupport {
     private static let defaultGIFFrameDelaySeconds = 0.1
     private static let minimumGIFFrameDelaySeconds = 0.02
     private static let fallbackGIFLoopDurationSeconds = 1.0
+    private static let maxGIFOverlayDecodedBytes: UInt64 = 180 * 1024 * 1024
 
     static func configuredImageDurationMetadata(for url: URL,
                                                 stillImageDurationSeconds: Int,
@@ -70,46 +71,63 @@ enum MediaFileSupport {
         // Determine if it is a large/high-frame-count GIF
         let isLarge = isLargeGIF(url: url, source: source)
 
-        // Sampling step
-        var step = 1
-        if count > 100 {
-            // Target around 60 frames max for very high frame count GIFs
-            step = Int(ceil(Double(count) / 60.0))
-        }
-
-        var sampledIndices: [Int] = []
-        var frameDurations: [TimeInterval] = []
-        var loopDuration: TimeInterval = 0
-
-        var i = 0
-        while i < count {
-            sampledIndices.append(i)
-
-            var delay = 0.0
-            for j in 0..<step {
-                if i + j < count {
-                    delay += gifFrameDelay(source: source, frameIndex: i + j)
-                }
-            }
-            frameDurations.append(delay)
-            loopDuration += delay
-
-            i += step
-        }
-
-        guard !sampledIndices.isEmpty, loopDuration > 0 else { return nil }
+        guard let plan = gifSamplePlan(source: source) else { return nil }
 
         // Max cache size
         // If large/high-frame-count, bound memory with a small cache (e.g., 5 frames).
         // Otherwise, cache all frames for smooth looping.
-        let maxCacheSize = isLarge ? 5 : sampledIndices.count
+        let maxCacheSize = isLarge ? 5 : plan.sampledIndices.count
 
         return GIFAnimation(source: source,
-                            sampledIndices: sampledIndices,
-                            frameDurations: frameDurations,
-                            loopDurationSeconds: loopDuration,
+                            sampledIndices: plan.sampledIndices,
+                            frameDurations: plan.frameDurations,
+                            loopDurationSeconds: plan.loopDurationSeconds,
                             fallbackFrame: firstFrame,
                             maxCacheSize: maxCacheSize)
+    }
+
+    static func loadGIFOverlayAnimation(for url: URL) -> Result<GIFOverlayAnimation, GIFOverlayAnimationLoadFailure> {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let plan = gifSamplePlan(source: source) else {
+            return .failure(.invalid)
+        }
+
+        let estimatedBytes = estimatedDecodedBytes(source: source, sampledIndices: plan.sampledIndices)
+        if estimatedBytes > maxGIFOverlayDecodedBytes {
+            return .failure(.decodedFramesTooLarge(estimatedBytes: estimatedBytes,
+                                                   limitBytes: maxGIFOverlayDecodedBytes))
+        }
+
+        let decodeOptions = [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+        var frames: [CGImage] = []
+        frames.reserveCapacity(plan.sampledIndices.count)
+        var decodedBytes: UInt64 = 0
+
+        for originalFrameIndex in plan.sampledIndices {
+            guard let frame = CGImageSourceCreateImageAtIndex(source, originalFrameIndex, decodeOptions) else {
+                return .failure(.invalid)
+            }
+
+            decodedBytes += decodedByteCount(for: frame)
+            guard decodedBytes <= maxGIFOverlayDecodedBytes else {
+                return .failure(.decodedFramesTooLarge(estimatedBytes: decodedBytes,
+                                                       limitBytes: maxGIFOverlayDecodedBytes))
+            }
+            frames.append(frame)
+        }
+
+        guard !frames.isEmpty else { return .failure(.invalid) }
+
+        return .success(GIFOverlayAnimation(frames: frames,
+                                            frameDurations: plan.frameDurations,
+                                            loopDurationSeconds: plan.loopDurationSeconds,
+                                            decodedByteCount: decodedBytes))
+    }
+
+    static func firstGIFFrame(for url: URL) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              CGImageSourceGetCount(source) > 0 else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 
     private static func gifPlaybackMetadata(from source: CGImageSource,
@@ -143,6 +161,71 @@ enum MediaFileSupport {
             return defaultGIFFrameDelaySeconds
         }
         return max(rawDelay, minimumGIFFrameDelaySeconds)
+    }
+
+    private static func gifSamplePlan(source: CGImageSource) -> GIFSamplePlan? {
+        let count = CGImageSourceGetCount(source)
+        guard count > 0 else { return nil }
+
+        var step = 1
+        if count > 100 {
+            // Keep high-frame-count GIFs bounded while preserving total timing.
+            step = Int(ceil(Double(count) / 60.0))
+        }
+
+        var sampledIndices: [Int] = []
+        var frameDurations: [TimeInterval] = []
+        var loopDuration: TimeInterval = 0
+
+        var i = 0
+        while i < count {
+            sampledIndices.append(i)
+
+            var delay = 0.0
+            for j in 0..<step where i + j < count {
+                delay += gifFrameDelay(source: source, frameIndex: i + j)
+            }
+            frameDurations.append(delay)
+            loopDuration += delay
+
+            i += step
+        }
+
+        guard !sampledIndices.isEmpty, loopDuration > 0 else { return nil }
+        return GIFSamplePlan(sampledIndices: sampledIndices,
+                             frameDurations: frameDurations,
+                             loopDurationSeconds: loopDuration)
+    }
+
+    private static func estimatedDecodedBytes(source: CGImageSource, sampledIndices: [Int]) -> UInt64 {
+        var total: UInt64 = 0
+        for index in sampledIndices {
+            guard let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any] else {
+                continue
+            }
+            let width = positiveInteger(from: properties[kCGImagePropertyPixelWidth])
+            let height = positiveInteger(from: properties[kCGImagePropertyPixelHeight])
+            guard width > 0, height > 0 else { continue }
+            total += UInt64(width) * UInt64(height) * 4
+        }
+        return total
+    }
+
+    private static func positiveInteger(from value: Any?) -> Int {
+        if let number = value as? NSNumber {
+            return max(0, number.intValue)
+        }
+        if let intValue = value as? Int {
+            return max(0, intValue)
+        }
+        if let doubleValue = value as? Double, doubleValue.isFinite {
+            return max(0, Int(doubleValue.rounded()))
+        }
+        return 0
+    }
+
+    private static func decodedByteCount(for image: CGImage) -> UInt64 {
+        UInt64(max(0, image.bytesPerRow)) * UInt64(max(0, image.height))
     }
 
     /// Reads `.fileSizeKey` synchronously via URLResourceValues. Returns "--" on failure.
@@ -219,6 +302,48 @@ enum MediaFileSupport {
         let frameCount: Int
         let loopDurationSeconds: Double
         let totalPlaybackDurationSeconds: Double
+    }
+
+    struct GIFOverlayAnimation {
+        let frames: [CGImage]
+        let frameDurations: [TimeInterval]
+        let loopDurationSeconds: TimeInterval
+        let decodedByteCount: UInt64
+
+        var keyTimes: [NSNumber] {
+            guard loopDurationSeconds > 0, !frameDurations.isEmpty else { return [] }
+            var keyTimes: [NSNumber] = []
+            keyTimes.reserveCapacity(frameDurations.count + 1)
+            var elapsed: TimeInterval = 0
+            for duration in frameDurations {
+                keyTimes.append(NSNumber(value: min(1.0, max(0.0, elapsed / loopDurationSeconds))))
+                elapsed += duration
+            }
+            keyTimes.append(NSNumber(value: 1.0))
+            return keyTimes
+        }
+    }
+
+    enum GIFOverlayAnimationLoadFailure: Error {
+        case invalid
+        case decodedFramesTooLarge(estimatedBytes: UInt64, limitBytes: UInt64)
+
+        var debugDescription: String {
+            switch self {
+            case .invalid:
+                return "invalid GIF"
+            case let .decodedFramesTooLarge(estimatedBytes, limitBytes):
+                let estimated = ByteCountFormatter.string(fromByteCount: Int64(estimatedBytes), countStyle: .memory)
+                let limit = ByteCountFormatter.string(fromByteCount: Int64(limitBytes), countStyle: .memory)
+                return "decoded frames too large: \(estimated) over \(limit) limit"
+            }
+        }
+    }
+
+    private struct GIFSamplePlan {
+        let sampledIndices: [Int]
+        let frameDurations: [TimeInterval]
+        let loopDurationSeconds: TimeInterval
     }
 
     struct LazyFrameCollection: RandomAccessCollection {
@@ -626,4 +751,3 @@ extension CGImage {
         fatalError("Failed to create empty fallback CGImage")
     }
 }
-

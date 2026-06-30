@@ -306,6 +306,7 @@ final class XtremeOverlayImageView: NSImageView {
         imageScaling = .scaleAxesIndependently
         imageAlignment = .alignCenter
         layer?.masksToBounds = true
+        layer?.contentsGravity = .resize
     }
 
     required init?(coder: NSCoder) {

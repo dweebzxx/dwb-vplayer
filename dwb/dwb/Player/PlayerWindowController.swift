@@ -1,4 +1,5 @@
 import Cocoa
+import QuartzCore
 import VLCKitSPM
 
 enum QueueSortMode: Int, CaseIterable {
@@ -386,9 +387,9 @@ class PlayerWindowController: NSWindowController {
     // MARK: - xtreme mode overlay
 
     private var xtremeOverlayView: XtremeOverlayImageView?
-    private var xtremeOverlayGIFAnimation: MediaFileSupport.GIFAnimation?
-    private var xtremeOverlayFrameTimer: Timer?
-    private var xtremeOverlayFrameIndex = 0
+    private var xtremeOverlayGIFAnimation: MediaFileSupport.GIFOverlayAnimation?
+    private var xtremeOverlayStaticFallbackPath: String?
+    private var xtremeOverlayWarningShownPaths: Set<String> = []
 
     // MARK: - Layout constants
 
@@ -1000,8 +1001,10 @@ class PlayerWindowController: NSWindowController {
             return
         }
 
+        let selectedPath = url.standardizedFileURL.path
         let currentPath = overlayView.representedURL?.standardizedFileURL.path
-        if currentPath != url.standardizedFileURL.path || xtremeOverlayGIFAnimation == nil {
+        let isCurrentStaticFallback = xtremeOverlayStaticFallbackPath == selectedPath
+        if currentPath != selectedPath || (xtremeOverlayGIFAnimation == nil && !isCurrentStaticFallback) {
             loadXtremeOverlayGIF(url: url, reason: reason)
         } else {
             overlayView.isHidden = false
@@ -1015,61 +1018,97 @@ class PlayerWindowController: NSWindowController {
             if didAccess { url.stopAccessingSecurityScopedResource() }
         }
 
-        guard let animation = MediaFileSupport.loadGIFAnimation(for: url),
-              !animation.frames.isEmpty else {
-            xtremeOverlayView?.representedURL = nil
+        switch MediaFileSupport.loadGIFOverlayAnimation(for: url) {
+        case let .success(animation):
+            xtremeOverlayGIFAnimation = animation
+            xtremeOverlayStaticFallbackPath = nil
+            xtremeOverlayView?.representedURL = url
+            xtremeOverlayView?.alphaValue = SettingsWindowController.currentXtremeModeOpacity()
+            xtremeOverlayView?.isHidden = false
+            startXtremeOverlayAnimation(animation)
+            DebugConsoleController.log("media", "xtremeModeOverlay: \(url.lastPathComponent) frames=\(animation.frames.count) decoded=\(animation.decodedByteCount)")
+
+        case let .failure(failure):
+            if case .decodedFramesTooLarge = failure,
+               let firstFrame = MediaFileSupport.firstGIFFrame(for: url) {
+                xtremeOverlayStaticFallbackPath = url.standardizedFileURL.path
+                xtremeOverlayView?.representedURL = url
+                xtremeOverlayView?.alphaValue = SettingsWindowController.currentXtremeModeOpacity()
+                xtremeOverlayView?.isHidden = false
+                setXtremeOverlayStaticFrame(firstFrame)
+                presentXtremeOverlayWarningOnce(url: url, failure: failure)
+            } else {
+                xtremeOverlayStaticFallbackPath = nil
+                xtremeOverlayView?.representedURL = nil
+            }
             DebugConsoleController.log(level: .error,
                                        category: "media",
-                                       message: "xtremeModeGIFLoadFailed: \(url.lastPathComponent)")
-            return
+                                       message: "xtremeModeGIFLoadFailed: \(url.lastPathComponent) \(failure.debugDescription)")
         }
-
-        xtremeOverlayGIFAnimation = animation
-        xtremeOverlayFrameIndex = 0
-        xtremeOverlayView?.representedURL = url
-        xtremeOverlayView?.alphaValue = SettingsWindowController.currentXtremeModeOpacity()
-        setXtremeOverlayFrame(animation.frames[0])
-        xtremeOverlayView?.isHidden = false
-        scheduleNextXtremeOverlayFrame(after: animation.frameDurations[0])
-        DebugConsoleController.log("media", "xtremeModeOverlay: \(url.lastPathComponent)")
     }
 
     private func clearXtremeOverlay(reason: String) {
-        xtremeOverlayFrameTimer?.invalidate()
-        xtremeOverlayFrameTimer = nil
         xtremeOverlayGIFAnimation = nil
-        xtremeOverlayFrameIndex = 0
+        xtremeOverlayStaticFallbackPath = nil
         xtremeOverlayView?.image = nil
+        xtremeOverlayView?.layer?.removeAnimation(forKey: "xtremeOverlayGIFContents")
+        xtremeOverlayView?.layer?.contents = nil
         xtremeOverlayView?.representedURL = nil
         xtremeOverlayView?.isHidden = true
         DebugConsoleController.log("media", "xtremeModeOverlayClear: reason=\(reason)")
     }
 
-    private func setXtremeOverlayFrame(_ frame: CGImage) {
-        xtremeOverlayView?.image = NSImage(cgImage: frame,
-                                           size: NSSize(width: frame.width, height: frame.height))
+    private func startXtremeOverlayAnimation(_ animation: MediaFileSupport.GIFOverlayAnimation) {
+        guard let layer = xtremeOverlayView?.layer,
+              let firstFrame = animation.frames.first,
+              animation.loopDurationSeconds > 0 else { return }
+
+        let values = (animation.frames + [firstFrame]).map { $0 as Any }
+        let keyTimes = animation.keyTimes
+        guard values.count == keyTimes.count else { return }
+
+        let contentsAnimation = CAKeyframeAnimation(keyPath: "contents")
+        contentsAnimation.values = values
+        contentsAnimation.keyTimes = keyTimes
+        contentsAnimation.duration = animation.loopDurationSeconds
+        contentsAnimation.calculationMode = .discrete
+        contentsAnimation.repeatCount = .infinity
+        contentsAnimation.isRemovedOnCompletion = false
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        xtremeOverlayView?.image = nil
+        layer.contentsGravity = .resize
+        layer.contents = firstFrame
+        layer.removeAnimation(forKey: "xtremeOverlayGIFContents")
+        layer.add(contentsAnimation, forKey: "xtremeOverlayGIFContents")
+        CATransaction.commit()
     }
 
-    private func scheduleNextXtremeOverlayFrame(after delay: TimeInterval) {
-        xtremeOverlayFrameTimer?.invalidate()
-        guard SettingsWindowController.isXtremeModeEnabled(),
-              xtremeOverlayView?.isHidden == false else { return }
-        xtremeOverlayFrameTimer = Timer.scheduledTimer(withTimeInterval: max(0.02, delay),
-                                                       repeats: false) { [weak self] _ in
-            self?.advanceXtremeOverlayFrame()
-        }
+    private func setXtremeOverlayStaticFrame(_ frame: CGImage) {
+        guard let layer = xtremeOverlayView?.layer else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        xtremeOverlayView?.image = nil
+        layer.contentsGravity = .resize
+        layer.removeAnimation(forKey: "xtremeOverlayGIFContents")
+        layer.contents = frame
+        CATransaction.commit()
     }
 
-    private func advanceXtremeOverlayFrame() {
-        guard SettingsWindowController.isXtremeModeEnabled(),
-              let animation = xtremeOverlayGIFAnimation,
-              !animation.frames.isEmpty else {
-            clearXtremeOverlay(reason: "advance-disabled")
-            return
+    private func presentXtremeOverlayWarningOnce(url: URL, failure: MediaFileSupport.GIFOverlayAnimationLoadFailure) {
+        let path = url.standardizedFileURL.path
+        guard xtremeOverlayWarningShownPaths.insert(path).inserted else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "GIF overlay is too large to animate smoothly"
+        alert.informativeText = "dwb xtreme is showing the first frame for \(url.lastPathComponent). Choose a smaller or lower-resolution GIF for animated xtreme mode overlay playback. \(failure.debugDescription)."
+        alert.alertStyle = .warning
+        if let window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
         }
-        xtremeOverlayFrameIndex = (xtremeOverlayFrameIndex + 1) % animation.frames.count
-        setXtremeOverlayFrame(animation.frames[xtremeOverlayFrameIndex])
-        scheduleNextXtremeOverlayFrame(after: animation.frameDurations[xtremeOverlayFrameIndex])
     }
 
     // MARK: - Video title overlay

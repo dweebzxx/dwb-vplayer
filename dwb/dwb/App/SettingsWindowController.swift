@@ -137,14 +137,18 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     static let xtremeModeOpacityMax: CGFloat = CGFloat(SettingsDefaultsRegistry.Defaults.xtremeModeOpacityMax)
     static let defaultXtremeModeOpacityValue: CGFloat = CGFloat(SettingsDefaultsRegistry.Defaults.xtremeModeOpacity)
     static let xtremeAudioEnabledKey = SettingsDefaultsRegistry.Keys.xtremeAudioEnabled
-    static let xtremeAudioMP3BookmarkDataKey = SettingsDefaultsRegistry.Keys.xtremeAudioMP3BookmarkData
+    static let xtremeAudioBookmarkDataKey = SettingsDefaultsRegistry.Keys.xtremeAudioMP3BookmarkData
     static let xtremeAudioVolumeKey = SettingsDefaultsRegistry.Keys.xtremeAudioVolume
     static let xtremeAudioVolumeMin: CGFloat = CGFloat(SettingsDefaultsRegistry.Defaults.xtremeAudioVolumeMin)
     static let xtremeAudioVolumeMax: CGFloat = CGFloat(SettingsDefaultsRegistry.Defaults.xtremeAudioVolumeMax)
     static let defaultXtremeAudioVolumeValue: CGFloat = CGFloat(SettingsDefaultsRegistry.Defaults.xtremeAudioVolume)
     static let xtremeAudioMuteMediaKey = SettingsDefaultsRegistry.Keys.xtremeAudioMuteMedia
     static let xtremeModeGIFLimitBytes: UInt64 = 50 * 1024 * 1024
-    static let xtremeAudioMP3LimitBytes: UInt64 = 100 * 1024 * 1024
+    static let xtremeAudioLimitBytes: UInt64 = 50 * 1024 * 1024
+    static let xtremeAudioAllowedExtensions: Set<String> = ["mp3", "m4a"]
+    static let xtremeAudioAllowedContentTypes: [UTType] = ["mp3", "m4a"].compactMap {
+        UTType(filenameExtension: $0)
+    }
     static let githubURLString = "https://github.com/dweebzxx/dwb-player"
     static let githubIssuesURLString = "https://github.com/dweebzxx/dwb-player/issues"
 
@@ -225,8 +229,8 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     static func resolvedXtremeModeGIFURL() -> URL? {
         resolvedSecurityScopedBookmarkURL(forKey: xtremeModeGIFBookmarkDataKey, clearStale: true)
     }
-    static func resolvedXtremeAudioMP3URL() -> URL? {
-        resolvedSecurityScopedBookmarkURL(forKey: xtremeAudioMP3BookmarkDataKey, clearStale: true)
+    static func resolvedXtremeAudioURL() -> URL? {
+        resolvedSecurityScopedBookmarkURL(forKey: xtremeAudioBookmarkDataKey, clearStale: true)
     }
     private static func resolvedSecurityScopedBookmarkURL(forKey key: String, clearStale: Bool) -> URL? {
         let defaults = UserDefaults.standard
@@ -241,7 +245,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
                 defaults.removeObject(forKey: key)
                 if key == xtremeModeGIFBookmarkDataKey {
                     NotificationCenter.default.post(name: .xtremeModeChanged, object: nil)
-                } else if key == xtremeAudioMP3BookmarkDataKey {
+                } else if key == xtremeAudioBookmarkDataKey {
                     NotificationCenter.default.post(name: .xtremeAudioChanged, object: nil)
                 }
                 return nil
@@ -488,8 +492,8 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private let xtremeModeOpacityPercentLabel = NSTextField(labelWithString: "15%")
     private let xtremeModeErrorLabel = NSTextField(labelWithString: "")
     private let xtremeAudioCheckbox = NSButton()
-    private let xtremeAudioChooseMP3Button = NSButton()
-    private let xtremeAudioMP3Label = NSTextField(labelWithString: "No MP3 selected")
+    private let xtremeAudioChooseFileButton = NSButton()
+    private let xtremeAudioFileLabel = NSTextField(labelWithString: "No audio selected")
     private let xtremeAudioVolumeSlider = NSSlider()
     private let xtremeAudioVolumePercentLabel = NSTextField(labelWithString: "50%")
     private let xtremeAudioMuteMediaCheckbox = NSButton()
@@ -513,7 +517,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private var sidebarButtons: [SettingsSidebarItemButton] = []
     private let detailContainer = NSView()
     private var sectionViews:   [NSView] = []
-    private let sectionNames    = ["Playback", "Controls", "Queue & Files", "Shortcuts", "xtreme", "Advanced", "About"]
+    private let sectionNames    = ["Playback", "Controls", "Queue & Files", "Shortcuts", "Xtreme", "Advanced", "About"]
 
     // MARK: - Init
 
@@ -893,13 +897,13 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         ])
 
         configure(xtremeAudioCheckbox, title: "Enable xtreme audio", state: Self.isXtremeAudioEnabled())
-        xtremeAudioChooseMP3Button.title = "Choose MP3\u{2026}"
-        xtremeAudioChooseMP3Button.bezelStyle = .rounded
-        xtremeAudioChooseMP3Button.target = self
-        xtremeAudioChooseMP3Button.action = #selector(chooseXtremeAudioMP3(_:))
-        xtremeAudioChooseMP3Button.translatesAutoresizingMaskIntoConstraints = false
+        xtremeAudioChooseFileButton.title = "Choose Audio\u{2026}"
+        xtremeAudioChooseFileButton.bezelStyle = .rounded
+        xtremeAudioChooseFileButton.target = self
+        xtremeAudioChooseFileButton.action = #selector(chooseXtremeAudioFile(_:))
+        xtremeAudioChooseFileButton.translatesAutoresizingMaskIntoConstraints = false
 
-        configureFileLabel(xtremeAudioMP3Label)
+        configureFileLabel(xtremeAudioFileLabel)
         configureErrorLabel(xtremeAudioErrorLabel)
 
         xtremeAudioVolumeSlider.minValue = Double(Self.xtremeAudioVolumeMin * 100.0)
@@ -915,15 +919,15 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
 
         configure(xtremeAudioMuteMediaCheckbox, title: "Mute video audio while xtreme audio is playing", state: Self.isXtremeAudioMuteMediaEnabled())
 
-        let mp3PickerStack = NSStackView(views: [xtremeAudioChooseMP3Button, xtremeAudioMP3Label])
-        mp3PickerStack.orientation = .horizontal
-        mp3PickerStack.alignment = .firstBaseline
-        mp3PickerStack.spacing = 10
+        let audioPickerStack = NSStackView(views: [xtremeAudioChooseFileButton, xtremeAudioFileLabel])
+        audioPickerStack.orientation = .horizontal
+        audioPickerStack.alignment = .firstBaseline
+        audioPickerStack.spacing = 10
 
         let audioSection = buildSection(title: "xtreme audio", rows: [
             buildRow(label: nil, control: xtremeAudioCheckbox),
-            buildRow(label: "MP3 loop", control: mp3PickerStack,
-                     helperText: "MP3 files only, up to 100 MB."),
+            buildRow(label: "Audio loop", control: audioPickerStack,
+                     helperText: "MP3 or M4A files only, up to 50 MB."),
             buildRow(label: "xtreme audio volume", control: audioVolumeStack),
             buildRow(label: nil, control: xtremeAudioMuteMediaCheckbox),
             buildRow(label: nil, control: xtremeAudioErrorLabel)
@@ -1502,29 +1506,29 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         }
     }
 
-    @objc private func chooseXtremeAudioMP3(_ sender: NSButton) {
+    @objc private func chooseXtremeAudioFile(_ sender: NSButton) {
         let panel = NSOpenPanel()
-        panel.title = "Choose MP3"
+        panel.title = "Choose Xtreme Audio"
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        if let mp3Type = UTType(filenameExtension: "mp3") {
-            panel.allowedContentTypes = [mp3Type]
-        }
+        panel.allowedContentTypes = Self.xtremeAudioAllowedContentTypes
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard validateXtremeFile(url: url,
-                                 fileExtension: "mp3",
-                                 maxBytes: Self.xtremeAudioMP3LimitBytes,
+                                 allowedExtensions: Self.xtremeAudioAllowedExtensions,
+                                 allowedContentTypes: Self.xtremeAudioAllowedContentTypes,
+                                 fileDescription: "MP3 or M4A",
+                                 maxBytes: Self.xtremeAudioLimitBytes,
                                  featureName: "xtreme audio",
                                  errorLabel: xtremeAudioErrorLabel) else { return }
         do {
-            UserDefaults.standard.set(try Self.bookmarkData(for: url), forKey: Self.xtremeAudioMP3BookmarkDataKey)
+            UserDefaults.standard.set(try Self.bookmarkData(for: url), forKey: Self.xtremeAudioBookmarkDataKey)
             xtremeAudioErrorLabel.stringValue = ""
             updateXtremeFileLabels()
             NotificationCenter.default.post(name: .xtremeAudioChanged, object: nil)
-            DebugConsoleController.log("settings", "xtremeAudioMP3=\(url.lastPathComponent)")
+            DebugConsoleController.log("settings", "xtremeAudioFile=\(url.lastPathComponent)")
         } catch {
-            presentXtremeFileError("The MP3 could not be saved for xtreme audio.\n\n\(error.localizedDescription)",
+            presentXtremeFileError("The audio file could not be saved for xtreme audio.\n\n\(error.localizedDescription)",
                                    label: xtremeAudioErrorLabel)
         }
     }
@@ -1550,21 +1554,46 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
                                     maxBytes: UInt64,
                                     featureName: String,
                                     errorLabel: NSTextField) -> Bool {
+        validateXtremeFile(url: url,
+                           allowedExtensions: [expectedExtension],
+                           allowedContentTypes: [],
+                           fileDescription: expectedExtension.uppercased(),
+                           maxBytes: maxBytes,
+                           featureName: featureName,
+                           errorLabel: errorLabel)
+    }
+
+    private func validateXtremeFile(url: URL,
+                                    allowedExtensions: Set<String>,
+                                    allowedContentTypes: [UTType],
+                                    fileDescription: String,
+                                    maxBytes: UInt64,
+                                    featureName: String,
+                                    errorLabel: NSTextField) -> Bool {
         let actualExtension = url.pathExtension.lowercased()
-        guard actualExtension == expectedExtension else {
-            presentXtremeFileError("Choose a .\(expectedExtension) file for \(featureName).", label: errorLabel)
+        guard allowedExtensions.contains(actualExtension) else {
+            presentXtremeFileError("Choose a supported \(fileDescription) file for \(featureName).", label: errorLabel)
             return false
         }
         do {
-            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentTypeKey])
             guard values.isRegularFile == true else {
-                presentXtremeFileError("Choose a regular .\(expectedExtension) file for \(featureName).", label: errorLabel)
+                presentXtremeFileError("Choose a regular \(fileDescription) file for \(featureName).", label: errorLabel)
                 return false
+            }
+            if !allowedContentTypes.isEmpty {
+                let extensionType = UTType(filenameExtension: actualExtension)
+                let contentType = values.contentType ?? extensionType
+                guard let contentType,
+                      allowedContentTypes.contains(where: { contentType.conforms(to: $0) || $0.conforms(to: contentType) }) else {
+                    presentXtremeFileError("Choose a supported \(fileDescription) file for \(featureName).", label: errorLabel)
+                    return false
+                }
             }
             let byteCount = UInt64(max(0, values.fileSize ?? 0))
             guard byteCount <= maxBytes else {
                 let limitMB = maxBytes / 1024 / 1024
-                presentXtremeFileError("The selected .\(expectedExtension) file is larger than \(limitMB) MB.", label: errorLabel)
+                presentXtremeFileError("The selected \(fileDescription) file is larger than \(limitMB) MB.", label: errorLabel)
                 return false
             }
             return true
@@ -1766,10 +1795,10 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         } else {
             xtremeModeGIFLabel.stringValue = "No GIF selected"
         }
-        if let url = Self.resolvedXtremeAudioMP3URL() {
-            xtremeAudioMP3Label.stringValue = url.lastPathComponent
+        if let url = Self.resolvedXtremeAudioURL() {
+            xtremeAudioFileLabel.stringValue = url.lastPathComponent
         } else {
-            xtremeAudioMP3Label.stringValue = "No MP3 selected"
+            xtremeAudioFileLabel.stringValue = "No audio selected"
         }
     }
 
@@ -1842,7 +1871,7 @@ final class XtremeAudioController {
 
     func syncFromDefaults() {
         guard SettingsWindowController.isXtremeAudioEnabled(),
-              let url = SettingsWindowController.resolvedXtremeAudioMP3URL() else {
+              let url = SettingsWindowController.resolvedXtremeAudioURL() else {
             stopLoop(reason: "disabled-or-missing")
             return
         }

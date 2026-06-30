@@ -71,7 +71,7 @@ Playback is powered by VLCKit through Swift Package Manager. dwb xtreme is local
 - Complete Video Mode for windowed fill playback.
 - Window opacity slider from 35% to 100%.
 - xtreme mode overlays a selected looping GIF over the media area at 5% to 50% opacity.
-- xtreme audio loops a selected MP3 with independent volume and an option to mute app media audio while it plays.
+- xtreme audio loops a selected MP3 or M4A with independent volume and an option to mute app media audio while it plays.
 
 ### Settings, Menus, And About
 
