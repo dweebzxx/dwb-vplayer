@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "AI Assistant Workflow Metadata Schema",
-  "description": "Required metadata fields for dwb player AI assistant workflow reports.",
+  "description": "Required metadata fields for dwb xtreme AI assistant workflow reports.",
   "type": "object",
   "additionalProperties": true,
   "required": [

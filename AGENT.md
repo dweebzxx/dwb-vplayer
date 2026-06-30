@@ -1,6 +1,6 @@
-# dwb player xtreme Agent Guide
+# dwb xtreme Agent Guide
 
-This checkout is the `xtreme` split-off branch/worktree for `dwb player`. Keep future work on `xtreme` unless the user explicitly instructs otherwise. Do not merge, push, or port xtreme-only work back to `main` without explicit authorization.
+This checkout is the `xtreme` split-off branch/worktree for `dwb xtreme`. Keep future work on `xtreme` unless the user explicitly instructs otherwise. Do not merge, push, or port xtreme-only work back to `main` without explicit authorization.
 
 ## Project Snapshot
 
@@ -66,7 +66,7 @@ This checkout is the `xtreme` split-off branch/worktree for `dwb player`. Keep f
 
 ## Project Notes
 
-- The public app name in current source documentation is `dwb player`.
+- The public-facing app naming must remain uniform as `dwb xtreme` in menus, bundle/display names, settings/about copy, and default player-window titles unless a future prompt explicitly renames the app.
 - README describes version 4.2.2 and macOS 13+ requirements.
 - VLCKit is resolved through Swift Package Manager using the pinned dependency in the Xcode project workspace state.
 - Local source builds use ad-hoc signing by default; Developer ID signing, notarization, stapling, uploads, and public release publication require explicit authorization.
