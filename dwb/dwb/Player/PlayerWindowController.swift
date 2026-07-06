@@ -393,7 +393,7 @@ class PlayerWindowController: NSWindowController {
     private var completeVideoWindowModeEnabled: Bool = UserDefaults.standard.bool(forKey: SettingsWindowController.completeVideoWindowModeKey)
     private var configuredSkipDurationMs: Int = SettingsWindowController.currentSkipDurationSeconds() * 1_000
     private var configuredSkipDurationSeconds: Int { configuredSkipDurationMs / 1_000 }
-    private var configuredImageDurationSeconds: Int = SettingsWindowController.currentImageDurationSeconds()
+    private var configuredImageDurationSeconds: Double = SettingsWindowController.currentImageDurationSeconds()
     private var configuredGIFLoopCount: Int = SettingsWindowController.currentGIFLoopCount()
     private var configuredShowTitleOverlay: Bool = SettingsWindowController.isShowTitleOverlayEnabled()
     private var configuredVideoPageDButtonEnabled: Bool = SettingsWindowController.isVideoPageDButtonEnabled()
@@ -811,7 +811,7 @@ class PlayerWindowController: NSWindowController {
                                                      displayString: MediaFileSupport.formatPlaybackDuration(fallback))
         }
 
-        return MediaFileSupport.DurationMetadata(seconds: Double(configuredImageDurationSeconds),
+        return MediaFileSupport.DurationMetadata(seconds: configuredImageDurationSeconds,
                                                  displayString: MediaFileSupport.formatShortDuration(configuredImageDurationSeconds))
     }
 

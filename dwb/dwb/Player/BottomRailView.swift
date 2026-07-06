@@ -565,7 +565,7 @@ final class BottomRailView: NSView {
     }
 
     private func formatImageTime(_ seconds: Double) -> String {
-        MediaFileSupport.formatShortDuration(max(0, Int(seconds)))
+        MediaFileSupport.formatShortDuration(max(0, seconds))
     }
 
     @objc private func queueTapped() { controller?.toggleQueuePage() }

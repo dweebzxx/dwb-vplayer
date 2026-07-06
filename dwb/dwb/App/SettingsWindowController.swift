@@ -231,7 +231,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     }
 
     struct SkipDurationOption  { let seconds: Int;    let title: String }
-    struct ImageDurationOption { let seconds: Int;    let title: String }
+    struct ImageDurationOption { let seconds: Double; let title: String }
     struct GIFLoopCountOption  { let loops:   Int;    let title: String }
 
     static let skipDurationOptions: [SkipDurationOption] = [
@@ -241,11 +241,13 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         .init(seconds: 180, title: "3 minutes"),
     ]
     static let imageDurationOptions: [ImageDurationOption] = [
-        .init(seconds: 1,  title: "1 second"),
-        .init(seconds: 2,  title: "2 seconds"),
-        .init(seconds: 3,  title: "3 seconds"),
-        .init(seconds: 5,  title: "5 seconds"),
-        .init(seconds: 10, title: "10 seconds"),
+        .init(seconds: 0.5,  title: "0.5 seconds"),
+        .init(seconds: 0.75, title: "0.75 seconds"),
+        .init(seconds: 1,    title: "1 second"),
+        .init(seconds: 2,    title: "2 seconds"),
+        .init(seconds: 3,    title: "3 seconds"),
+        .init(seconds: 5,    title: "5 seconds"),
+        .init(seconds: 10,   title: "10 seconds"),
     ]
     static let gifLoopCountOptions: [GIFLoopCountOption] = [
         .init(loops: 1,  title: "1 loop"),
@@ -266,13 +268,24 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         Int((seconds * 10).rounded())
     }
 
-    static func validatedImageDurationSeconds(_ value: Int) -> Int {
-        imageDurationOptions.contains(where: { $0.seconds == value }) ? value : defaultImageDurationSeconds
+    static func imageDurationTag(for seconds: Double) -> Int {
+        Int((seconds * 100).rounded())
     }
-    static func currentImageDurationSeconds() -> Int {
-        let stored = UserDefaults.standard.integer(forKey: imageDurationKey)
+    static func imageDurationSeconds(forTag tag: Int) -> Double {
+        Double(tag) / 100.0
+    }
+    static func validatedImageDurationSeconds(_ value: Double) -> Double {
+        let tag = imageDurationTag(for: value)
+        return imageDurationOptions.first(where: { imageDurationTag(for: $0.seconds) == tag })?.seconds
+            ?? Double(defaultImageDurationSeconds)
+    }
+    static func currentImageDurationSeconds() -> Double {
+        let defaults = UserDefaults.standard
+        let stored = defaults.object(forKey: imageDurationKey)
+            .map { _ in defaults.double(forKey: imageDurationKey) }
+            ?? Double(defaultImageDurationSeconds)
         let v = validatedImageDurationSeconds(stored)
-        if v != stored { UserDefaults.standard.set(v, forKey: imageDurationKey) }
+        if v != stored { defaults.set(v, forKey: imageDurationKey) }
         return v
     }
     static func validatedGIFLoopCount(_ value: Int) -> Int {
@@ -581,7 +594,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         imageDurationPopup.action = #selector(imageDurationPopupChanged(_:))
         for opt in Self.imageDurationOptions {
             imageDurationPopup.addItem(withTitle: opt.title)
-            imageDurationPopup.lastItem?.tag = opt.seconds
+            imageDurationPopup.lastItem?.tag = Self.imageDurationTag(for: opt.seconds)
         }
         imageDurationPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
         
@@ -1185,7 +1198,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     }
 
     @objc private func imageDurationPopupChanged(_ sender: NSPopUpButton) {
-        let selected = Self.validatedImageDurationSeconds(sender.selectedTag())
+        let selected = Self.validatedImageDurationSeconds(Self.imageDurationSeconds(forTag: sender.selectedTag()))
         UserDefaults.standard.set(selected, forKey: Self.imageDurationKey)
         NotificationCenter.default.post(name: .imageDurationChanged, object: nil)
         DebugConsoleController.log("settings", "imageDuration=\(selected)s")
@@ -1343,7 +1356,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
 
         skipDurationPopup.selectItem(withTag: Self.currentSkipDurationSeconds())
         syncPlaybackSpeedControlsFromTarget()
-        imageDurationPopup.selectItem(withTag: Self.currentImageDurationSeconds())
+        imageDurationPopup.selectItem(withTag: Self.imageDurationTag(for: Self.currentImageDurationSeconds()))
         gifLoopCountPopup.selectItem(withTag: Self.currentGIFLoopCount())
 
         let rawThreshold = UserDefaults.standard.double(forKey: Self.chromeAutohideThresholdKey)

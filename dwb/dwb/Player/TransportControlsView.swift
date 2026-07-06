@@ -906,7 +906,7 @@ final class TransportControlsView: NSView {
     }
 
     private func formatImageTime(_ seconds: Double) -> String {
-        MediaFileSupport.formatShortDuration(max(0, Int(seconds)))
+        MediaFileSupport.formatShortDuration(max(0, seconds))
     }
 
     // MARK: - Helpers
