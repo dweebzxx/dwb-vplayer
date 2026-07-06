@@ -57,15 +57,36 @@ dwb/*.xcworkspace
 node_modules/
 .env
 .env.*
+!.env.example
 
-# Local-only workflow and internal artifacts
-.agents/
-audit/
+# Workflow-internal (Tier 2 — lives in .private/, symlinked in)
+/AGENTS.md
+/CLAUDE.md
+/metadata-schema.json
+/scripts/ai-post-pass.zsh
+/scripts/ai-tool-preflight.zsh
+/scripts/ai-commit.zsh
+/scripts/ai-push.zsh
+/.codex
+/.claude
+/audit
+/.private/
+/.agents
+/assets/prompt-assets
+/assets/Brand_Color_System.pdf
+
+# Tool-managed local state (not versioned)
+/.antigravitycli/
+
+# Build-report split (reports/metadata-reports symlinked to .private/; rest local-only)
+build-report-logs/launchers/
+build-report-logs/logs/
+build-report-logs/prompts/
+build-report-logs/reports/
+build-report-logs/metadata-reports/
+
+# Local-only workflow and internal artifacts (unrelated to Tier 2 workflow split)
 assets/
-AGENT.md
-metadata-schema.json
-scripts/ai-post-pass.zsh
-scripts/ai-tool-preflight.zsh
 dwb/dwbTests/
 scripts/test.sh
 .github/workflows/
