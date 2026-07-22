@@ -59,11 +59,11 @@ node_modules/
 .env.*
 !.env.example
 
-# Workflow-internal (Tier 2 — lives in .private/, symlinked in; v2.3.2 exact entries)
+# Workflow-internal (Tier 2 — lives in .private/, symlinked in; v2.4.0 exact entries)
 /AGENTS.md
 /CLAUDE.md
 /metadata-schema.json
-/canonical-blocks-v2.3.2.md
+/canonical-blocks-v2.4.0.md
 /skills-lock.json
 /.agents/
 /.agents
@@ -85,6 +85,7 @@ node_modules/
 /scripts/ai-agents-lint.zsh
 /scripts/ai-validate-skills.zsh
 /scripts/ai-context-doctor.zsh
+/scripts/ai-launch-debug.zsh
 /scripts/ai-commit.zsh
 /scripts/ai-push.zsh
 
