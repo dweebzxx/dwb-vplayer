@@ -75,6 +75,7 @@ class PlayerWindowController: NSWindowController {
     private var transport: TransportControlsView!
     private var volumeBar: VolumeBarView!
     private var queuePage: QueuePageView!
+    private let intakeRecoveryView = IntakeRecoveryView()
     private let centeredTitleLabel = NSTextField(labelWithString: PlayerWindowController.defaultWindowTitle)
     private let debugOrdinal: Int
 
@@ -197,6 +198,12 @@ class PlayerWindowController: NSWindowController {
     private var sourceFolderURLs: [URL] = []
     private var folderScanGeneration: UInt64 = 0
     private var folderScanTask: Task<Void, Never>?
+    private enum IntakeRecoveryRetryContext {
+        case intake(urls: [URL], appendingExplicitFiles: Bool)
+        case rescan(folders: [URL])
+    }
+    private var intakeRecoveryRetryContext: IntakeRecoveryRetryContext?
+    private var intakeRecoverySourceURLs: [URL] = []
 
     /// Current position in `displayOrder`. -1 when no set is loaded.
     private var currentDisplayIndex: Int = -1
@@ -479,7 +486,22 @@ class PlayerWindowController: NSWindowController {
         videoTitleOverlay.alphaValue      = 0
         videoTitleOverlay.isHidden        = true
         videoTitleOverlay.wantsLayer      = true
+        videoTitleOverlay.layer?.cornerRadius = 8
+        videoTitleOverlay.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.38).cgColor
+        videoTitleOverlay.layer?.masksToBounds = true
+        videoTitleOverlay.setAccessibilityIdentifier("player.titleOverlay")
         cv.addSubview(videoTitleOverlay)
+
+        intakeRecoveryView.actionHandler = { [weak self] action in
+            self?.handleIntakeRecoveryAction(action)
+        }
+        intakeRecoveryView.dismissHandler = { [weak self] in
+            self?.clearIntakeRecovery()
+        }
+        intakeRecoveryView.layoutDidChange = { [weak self] in
+            self?.layoutPlayerViews()
+        }
+        cv.addSubview(intakeRecoveryView)
 
         self.window = win
         win.delegate = self
@@ -947,22 +969,22 @@ class PlayerWindowController: NSWindowController {
         // Image display view always matches videoSurface — covers both fullscreen and windowed.
         imageDisplayView?.frame = videoSurface.frame
 
+        let recoveryWidth = min(640, max(0, transport.frame.width - 32))
+        let preferredRecoveryHeight = intakeRecoveryView.preferredHeight(for: recoveryWidth)
+        let availableRecoveryHeight = max(120, transport.frame.height - 112)
+        let recoveryHeight = min(preferredRecoveryHeight, availableRecoveryHeight)
+        intakeRecoveryView.frame = NSRect(
+            x: 16,
+            y: 96,
+            width: recoveryWidth,
+            height: recoveryHeight
+        )
+
         applyScaleMode()
         positionVideoTitleOverlay()
     }
 
     // MARK: - Video title overlay
-
-    // L6: cache font and attribute dictionary — rebuilt only once, not on every title show.
-    private lazy var titleOverlayFont: NSFont = {
-        NSFont(name: "Arial", size: 32) ?? NSFont.systemFont(ofSize: 32, weight: .medium)
-    }()
-    private lazy var titleOverlayAttrs: [NSAttributedString.Key: Any] = {
-        [.font:            titleOverlayFont,
-         .foregroundColor: NSColor.white,
-         .strokeColor:     NSColor.black,
-         .strokeWidth:     CGFloat(-2.0)]
-    }()
 
     /// Show the video title at the top-center of the player area for 5 seconds.
     /// Cancels and restarts any existing overlay timer so rapid track changes
@@ -973,8 +995,20 @@ class PlayerWindowController: NSWindowController {
         titleOverlayShowGeneration += 1
         let gen = titleOverlayShowGeneration
 
+        let availableWidth = videoSurface?.frame.width ?? window?.contentView?.bounds.width ?? 800
+        let fontSize: CGFloat = availableWidth < 560 ? 22 : 26
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.72)
+        shadow.shadowBlurRadius = 3
+        shadow.shadowOffset = NSSize(width: 0, height: -1)
+        let titleOverlayAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .semibold),
+            .foregroundColor: NSColor.white,
+            .shadow: shadow,
+        ]
         videoTitleOverlay.attributedStringValue = NSAttributedString(string: title,
                                                                       attributes: titleOverlayAttrs)
+        videoTitleOverlay.setAccessibilityLabel(title)
         positionVideoTitleOverlay()
         videoTitleOverlay.isHidden = false
         videoTitleOverlay.alphaValue = 1.0
@@ -997,11 +1031,13 @@ class PlayerWindowController: NSWindowController {
         guard videoTitleOverlay.superview != nil else { return }
         let videoFrame = videoSurface?.frame ?? .zero
         guard videoFrame.width > 0, videoFrame.height > 0 else { return }
-        let overlayH: CGFloat = 54
-        let overlayW: CGFloat = min(videoFrame.width - 40, 800)
+        let overlayH: CGFloat = videoFrame.width < 560 ? 38 : 42
+        let maximumWidth = max(0, min(videoFrame.width - 32, 800))
+        let measuredWidth = ceil(videoTitleOverlay.attributedStringValue.size().width) + 30
+        let overlayW = min(maximumWidth, measuredWidth)
         videoTitleOverlay.frame = NSRect(
             x: videoFrame.minX + (videoFrame.width - overlayW) / 2,
-            y: videoFrame.maxY - 18 - overlayH,
+            y: videoFrame.maxY - 20 - overlayH,
             width: overlayW,
             height: overlayH
         )
@@ -1727,8 +1763,103 @@ class PlayerWindowController: NSWindowController {
 
     // MARK: - Drop / open URL handling
 
+    private func presentIntakeFailure(
+        _ failure: MediaIntakeFailure,
+        sourceURLs: [URL],
+        retryContext: IntakeRecoveryRetryContext?
+    ) {
+        intakeRecoverySourceURLs = sourceURLs
+        intakeRecoveryRetryContext = retryContext
+        intakeRecoveryView.present(MediaIntakeRecoveryMapper.presentation(for: failure))
+        layoutPlayerViews()
+        DebugConsoleController.log("queue", "intakeRecovery: \(MediaIntakeRecoveryMapper.presentation(for: failure).title)")
+    }
+
+    private func presentIntakeScanning(
+        folderCount: Int,
+        sourceURLs: [URL],
+        retryContext: IntakeRecoveryRetryContext
+    ) {
+        intakeRecoverySourceURLs = sourceURLs
+        intakeRecoveryRetryContext = retryContext
+        intakeRecoveryView.present(.scanning(folderCount: max(1, folderCount)))
+        layoutPlayerViews()
+        DebugConsoleController.log("queue", "intakeRecovery: scanning folders=\(folderCount)")
+    }
+
+    private func clearIntakeRecovery() {
+        intakeRecoveryRetryContext = nil
+        intakeRecoverySourceURLs = []
+        intakeRecoveryView.dismiss()
+    }
+
+    private func handleIntakeRecoveryAction(_ action: MediaIntakeRecoveryAction) {
+        switch action {
+        case .addMedia:
+            openFile()
+        case .openAcceptSettings:
+            SettingsWindowController.shared.openAcceptSettings()
+        case .retryRescan:
+            switch intakeRecoveryRetryContext {
+            case .intake(let urls, let appendingExplicitFiles):
+                handleDroppedURLs(urls, appendingExplicitFiles: appendingExplicitFiles)
+            case .rescan(let folders):
+                guard !folders.isEmpty else {
+                    locateRecoverySource()
+                    return
+                }
+                startAsyncFolderRescan(
+                    foldersToScan: folders,
+                    acceptedKinds: SettingsWindowController.acceptedMediaKinds()
+                )
+            case .none:
+                locateRecoverySource()
+            }
+        case .revealSource:
+            guard let source = intakeRecoverySourceURLs.first else { return }
+            NSWorkspace.shared.activateFileViewerSelecting([source])
+        case .locateSource:
+            locateRecoverySource()
+        case .showDetails:
+            break // Expanded locally by IntakeRecoveryView.
+        }
+    }
+
+    private func locateRecoverySource() {
+        let panel = NSOpenPanel()
+        panel.title = "Locate Source Folder"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+
+        switch intakeRecoveryRetryContext {
+        case .intake(_, let appendingExplicitFiles):
+            handleDroppedURLs(panel.urls, appendingExplicitFiles: appendingExplicitFiles)
+        case .rescan, .none:
+            sourceFolderURLs = panel.urls
+            startAsyncFolderRescan(
+                foldersToScan: panel.urls,
+                acceptedKinds: SettingsWindowController.acceptedMediaKinds()
+            )
+        }
+    }
+
     func handleDroppedURLs(_ urls: [URL], appendingExplicitFiles: Bool = true) {
         guard !urls.isEmpty else { return }
+
+        let unavailable = urls.filter { !FileManager.default.fileExists(atPath: $0.path) }
+        if let missing = unavailable.first {
+            presentIntakeFailure(
+                .sourceUnavailable(
+                    name: missing.lastPathComponent,
+                    diagnostic: "The selected local source no longer exists or is unavailable at \(missing.path)."
+                ),
+                sourceURLs: urls,
+                retryContext: .intake(urls: urls, appendingExplicitFiles: appendingExplicitFiles)
+            )
+            return
+        }
 
         var dirs:  [URL] = []
         var files: [URL] = []
@@ -1746,6 +1877,7 @@ class PlayerWindowController: NSWindowController {
             let result = MediaFileSupport.expandToSupportedMedia(urls, acceptedKinds: acceptedKinds)
             applyExpandedMediaIntake(result: result,
                                      dirs: dirs,
+                                     sourceURLs: urls,
                                      appendingExplicitFiles: appendingExplicitFiles)
             return
         }
@@ -1774,6 +1906,11 @@ class PlayerWindowController: NSWindowController {
     private func startAsyncSingleFolderIntake(folder: URL,
                                              acceptedKinds: Set<MediaFileSupport.MediaKind>) {
         let generation = beginFolderScanOperation()
+        presentIntakeScanning(
+            folderCount: 1,
+            sourceURLs: [folder],
+            retryContext: .intake(urls: [folder], appendingExplicitFiles: true)
+        )
         DebugConsoleController.log("queue", "expandAsync: start singleFolder=\(folder.lastPathComponent)")
 
         folderScanTask = Task.detached(priority: .userInitiated) { [weak self] in
@@ -1798,8 +1935,14 @@ class PlayerWindowController: NSWindowController {
                     DebugConsoleController.log(level: .error,
                                                category: "queue",
                                                message: "expandAsync failed: \(error.localizedDescription)")
-                    self.showDropError("Could not scan \"\(folder.lastPathComponent)\".",
-                                       title: "Unable to Open Folder")
+                    let failure: MediaIntakeFailure = FileManager.default.fileExists(atPath: folder.path)
+                        ? .folderScanFailed(name: folder.lastPathComponent, diagnostic: error.localizedDescription)
+                        : .sourceUnavailable(name: folder.lastPathComponent, diagnostic: error.localizedDescription)
+                    self.presentIntakeFailure(
+                        failure,
+                        sourceURLs: [folder],
+                        retryContext: .intake(urls: [folder], appendingExplicitFiles: true)
+                    )
                 }
             }
         }
@@ -1810,6 +1953,11 @@ class PlayerWindowController: NSWindowController {
                                                appendingExplicitFiles: Bool,
                                                acceptedKinds: Set<MediaFileSupport.MediaKind>) {
         let generation = beginFolderScanOperation()
+        presentIntakeScanning(
+            folderCount: dirs.count,
+            sourceURLs: urls,
+            retryContext: .intake(urls: urls, appendingExplicitFiles: appendingExplicitFiles)
+        )
         DebugConsoleController.log("queue", "expandAsync: start urls=\(urls.count) folders=\(dirs.count)")
 
         folderScanTask = Task.detached(priority: .userInitiated) { [weak self] in
@@ -1825,6 +1973,7 @@ class PlayerWindowController: NSWindowController {
                     self.folderScanTask = nil
                     self.applyExpandedMediaIntake(result: result,
                                                   dirs: dirs,
+                                                  sourceURLs: urls,
                                                   appendingExplicitFiles: appendingExplicitFiles)
                 }
             } catch is CancellationError {
@@ -1836,8 +1985,11 @@ class PlayerWindowController: NSWindowController {
                     DebugConsoleController.log(level: .error,
                                                category: "queue",
                                                message: "expandAsync failed: \(error.localizedDescription)")
-                    self.showDropError("Could not scan the selected folders.",
-                                       title: "Unable to Open Folder")
+                    self.presentIntakeFailure(
+                        .folderScanFailed(name: nil, diagnostic: error.localizedDescription),
+                        sourceURLs: dirs,
+                        retryContext: .intake(urls: urls, appendingExplicitFiles: appendingExplicitFiles)
+                    )
                 }
             }
         }
@@ -1846,10 +1998,16 @@ class PlayerWindowController: NSWindowController {
     private func applySingleFolderIntake(folder: URL,
                                          result: MediaFileSupport.ExpansionResult) {
         guard !result.media.isEmpty else {
-            showEmptyIntakeMessage(result: result,
-                                   unsupportedMessage: "No supported media files found in \"\(folder.lastPathComponent)\".")
+            showEmptyIntakeMessage(
+                result: result,
+                sourceURLs: [folder],
+                retryContext: .intake(urls: [folder], appendingExplicitFiles: true),
+                emptyFolderNames: [folder.lastPathComponent]
+            )
             return
         }
+
+        clearIntakeRecovery()
 
         let queueEmpty = playbackSet.isEmpty || displayOrder.isEmpty
         if queueEmpty {
@@ -1863,25 +2021,35 @@ class PlayerWindowController: NSWindowController {
 
     private func applyExpandedMediaIntake(result: MediaFileSupport.ExpansionResult,
                                           dirs: [URL],
+                                          sourceURLs: [URL],
                                           appendingExplicitFiles: Bool) {
         let expanded = result.media
         let emptyFolders = result.emptyFolderNames
 
         guard !expanded.isEmpty else {
             if result.excludedMediaCount > 0 || result.supportedMediaCount > 0 {
-                showEmptyIntakeMessage(result: result)
+                showEmptyIntakeMessage(
+                    result: result,
+                    sourceURLs: sourceURLs,
+                    retryContext: .intake(urls: sourceURLs, appendingExplicitFiles: appendingExplicitFiles)
+                )
             } else if !emptyFolders.isEmpty {
-                let names = emptyFolders.map { "\"\($0)\"" }.joined(separator: ", ")
-                showDropError("No supported media files found in \(names).",
-                              title: "Nothing to Play")
+                presentIntakeFailure(
+                    .emptyFolders(names: emptyFolders),
+                    sourceURLs: sourceURLs,
+                    retryContext: .intake(urls: sourceURLs, appendingExplicitFiles: appendingExplicitFiles)
+                )
             } else {
-                let ext = MediaFileSupport.supportedExtensions.sorted().joined(separator: ", ")
-                showDropError(
-                    "None of the dropped files are supported media.\n\nSupported: \(ext)",
-                    title: "Unsupported Files")
+                presentIntakeFailure(
+                    .unsupportedFiles(supportedExtensions: MediaFileSupport.supportedExtensions.sorted()),
+                    sourceURLs: sourceURLs,
+                    retryContext: .intake(urls: sourceURLs, appendingExplicitFiles: appendingExplicitFiles)
+                )
             }
             return
         }
+
+        clearIntakeRecovery()
 
         if !emptyFolders.isEmpty {
             DebugConsoleController.log("queue", "expand: skippedEmptyFolders=\(emptyFolders.count) finalCount=\(expanded.count)")
@@ -1902,33 +2070,33 @@ class PlayerWindowController: NSWindowController {
         handleDroppedURLs([url], appendingExplicitFiles: true)
     }
 
-    private func showDropError(_ message: String, title: String) {
-        DispatchQueue.main.async { [weak self] in
-            let alert = NSAlert()
-            alert.messageText    = title
-            alert.informativeText = message
-            alert.alertStyle     = .warning
-            alert.addButton(withTitle: "OK")
-            if let window = self?.window { alert.beginSheetModal(for: window) }
-        }
-    }
-
     private func showEmptyIntakeMessage(result: MediaFileSupport.ExpansionResult,
-                                        unsupportedMessage: String? = nil) {
+                                        sourceURLs: [URL],
+                                        retryContext: IntakeRecoveryRetryContext,
+                                        emptyFolderNames: [String] = []) {
         if SettingsWindowController.acceptedMediaKinds().isEmpty {
-            showDropError("All media types are disabled in Accept settings. Enable Video, Images, or GIF to load media.",
-                          title: "Nothing to Play")
+            presentIntakeFailure(.mediaKindsDisabled, sourceURLs: sourceURLs, retryContext: retryContext)
             return
         }
 
         if result.excludedMediaCount > 0 {
-            showDropError("Media files were found, but they are disabled in Accept settings.",
-                          title: "Nothing to Play")
+            presentIntakeFailure(.mediaKindsDisabled, sourceURLs: sourceURLs, retryContext: retryContext)
             return
         }
 
-        showDropError(unsupportedMessage ?? "No supported media files found.",
-                      title: "Nothing to Play")
+        if !emptyFolderNames.isEmpty || !result.emptyFolderNames.isEmpty {
+            presentIntakeFailure(
+                .emptyFolders(names: emptyFolderNames.isEmpty ? result.emptyFolderNames : emptyFolderNames),
+                sourceURLs: sourceURLs,
+                retryContext: retryContext
+            )
+        } else {
+            presentIntakeFailure(
+                .unsupportedFiles(supportedExtensions: MediaFileSupport.supportedExtensions.sorted()),
+                sourceURLs: sourceURLs,
+                retryContext: retryContext
+            )
+        }
     }
 
     @discardableResult
@@ -2491,6 +2659,7 @@ class PlayerWindowController: NSWindowController {
         videoSurface.isHidden = true
 
         transport.isImageMode = true
+        transport.isGIFMode = currentItemIsGIF
         transport.imageModeElapsed = 0
         transport.imageModeDuration = playbackDuration
         transport.imageModeIsPlaying = true
@@ -2525,6 +2694,7 @@ class PlayerWindowController: NSWindowController {
         imageDisplayView?.animates = false
         videoSurface.isHidden = false
         transport.isImageMode = false
+        transport.isGIFMode = false
         transport.invalidateCachedDisplayState()
         NSLog("[dwb-image] cleared")
     }
@@ -4132,7 +4302,12 @@ extension PlayerWindowController: QueuePageViewDelegate {
 
     /// Multi-row deletion from Queue Page keyboard delete. Indices are pre-sorted descending.
     func queuePage(_ view: QueuePageView, didRequestDeleteRows indices: [Int]) {
-        for index in indices {
+        let plan = QueueDisplayProjection.deletionPlan(
+            itemCount: displayOrder.count,
+            currentDisplayIndex: currentDisplayIndex,
+            requestedDisplayIndices: indices
+        )
+        for index in plan.descendingDisplayIndices {
             removeQueueItem(displayIndex: index)
         }
     }
@@ -4167,7 +4342,7 @@ extension PlayerWindowController: QueuePageViewDelegate {
     }
 
     func queuePageDidRequestRescan(_ view: QueuePageView) {
-        guard let win = window else { return }
+        guard window != nil else { return }
 
         // Determine folders to scan: explicit tracked folders, else fallback to parent dirs of queue items.
         var foldersToScan: [URL] = sourceFolderURLs
@@ -4183,12 +4358,14 @@ extension PlayerWindowController: QueuePageViewDelegate {
         }
 
         guard !foldersToScan.isEmpty else {
-            let a = NSAlert()
-            a.messageText = "Rescan Folder"
-            a.informativeText = "No folder context found for this queue. Open or drop a folder to enable folder rescan."
-            a.alertStyle = .informational
-            a.addButton(withTitle: "OK")
-            a.beginSheetModal(for: win)
+            presentIntakeFailure(
+                .sourceUnavailable(
+                    name: nil,
+                    diagnostic: "No source folder is associated with this queue. Locate a folder or add media to continue."
+                ),
+                sourceURLs: [],
+                retryContext: .rescan(folders: [])
+            )
             return
         }
 
@@ -4198,7 +4375,20 @@ extension PlayerWindowController: QueuePageViewDelegate {
 
     private func startAsyncFolderRescan(foldersToScan: [URL],
                                         acceptedKinds: Set<MediaFileSupport.MediaKind>) {
+        guard !acceptedKinds.isEmpty else {
+            presentIntakeFailure(
+                .mediaKindsDisabled,
+                sourceURLs: foldersToScan,
+                retryContext: .rescan(folders: foldersToScan)
+            )
+            return
+        }
         let generation = beginFolderScanOperation()
+        presentIntakeScanning(
+            folderCount: foldersToScan.count,
+            sourceURLs: foldersToScan,
+            retryContext: .rescan(folders: foldersToScan)
+        )
         DebugConsoleController.log("rescan", "rescanAsync: start folders=\(foldersToScan.count)")
 
         folderScanTask = Task.detached(priority: .userInitiated) { [weak self] in
@@ -4224,7 +4414,15 @@ extension PlayerWindowController: QueuePageViewDelegate {
                 await MainActor.run {
                     guard let self, self.folderScanGeneration == generation else { return }
                     self.folderScanTask = nil
-                    self.applyFolderRescan(freshURLs: freshURLs, freshPaths: freshPaths)
+                    if freshURLs.isEmpty {
+                        self.presentIntakeFailure(
+                            .emptyFolders(names: foldersToScan.map(\.lastPathComponent)),
+                            sourceURLs: foldersToScan,
+                            retryContext: .rescan(folders: foldersToScan)
+                        )
+                    } else {
+                        self.applyFolderRescan(freshURLs: freshURLs, freshPaths: freshPaths)
+                    }
                 }
             } catch is CancellationError {
                 return
@@ -4235,12 +4433,15 @@ extension PlayerWindowController: QueuePageViewDelegate {
                     DebugConsoleController.log(level: .error,
                                                category: "rescan",
                                                message: "rescanAsync failed: \(error.localizedDescription)")
-                    let alert = NSAlert()
-                    alert.messageText = "Rescan Folder"
-                    alert.informativeText = "Could not rescan folder contents."
-                    alert.alertStyle = .warning
-                    alert.addButton(withTitle: "OK")
-                    if let window = self.window { alert.beginSheetModal(for: window) }
+                    let unavailable = foldersToScan.first { !FileManager.default.fileExists(atPath: $0.path) }
+                    let failure: MediaIntakeFailure = unavailable.map {
+                        .sourceUnavailable(name: $0.lastPathComponent, diagnostic: error.localizedDescription)
+                    } ?? .folderScanFailed(name: nil, diagnostic: error.localizedDescription)
+                    self.presentIntakeFailure(
+                        failure,
+                        sourceURLs: foldersToScan,
+                        retryContext: .rescan(folders: foldersToScan)
+                    )
                 }
             }
         }
@@ -4248,6 +4449,7 @@ extension PlayerWindowController: QueuePageViewDelegate {
 
     private func applyFolderRescan(freshURLs: [URL],
                                    freshPaths: Set<String>) {
+        clearIntakeRecovery()
         // Capture the currently playing URL before modifying state.
         let playingURL: URL? = currentSetIndex >= 0 && currentSetIndex < playbackSet.count
             ? playbackSet[currentSetIndex]

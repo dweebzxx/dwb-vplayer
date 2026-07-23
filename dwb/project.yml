@@ -35,8 +35,8 @@ targets:
     settings:
       base:
         INFOPLIST_FILE: dwb/Resources/Info.plist
-        MARKETING_VERSION: "4.2.3"
-        CURRENT_PROJECT_VERSION: "4.2.3"
+        MARKETING_VERSION: "4.2.4"
+        CURRENT_PROJECT_VERSION: "4.2.4"
         PRODUCT_BUNDLE_IDENTIFIER: com.dwb.dwb
         PRODUCT_NAME: "dwb player"
         ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: "YES"
@@ -55,6 +55,8 @@ targets:
       - path: dwb/Player/MediaFileSupportCore.swift
       - path: dwb/Player/PlaybackCompletionPolicy.swift
       - path: dwb/Player/QueueDisplayProjection.swift
+      - path: dwb/Player/MediaIntakeRecovery.swift
+      - path: dwb/Player/PlayerCommandValidation.swift
       - path: dwb/App/DebugLogSanitizer.swift
       - path: dwb/App/BookmarkStore.swift
       - path: dwb/App/SettingsDefaultsRegistry.swift

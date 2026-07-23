@@ -36,6 +36,7 @@ final class BottomRailView: NSView {
     private let pendingSeekTimeout: TimeInterval = 1.5
 
     var isImageMode: Bool = false
+    var isGIFMode: Bool = false
     var imageModeElapsed: Double = 0
     var imageModeDuration: Double = 3
     var imageModeIsPlaying: Bool = true
@@ -46,6 +47,25 @@ final class BottomRailView: NSView {
     private var cachedElapsedText: String?
     private var cachedRemainingText: String?
     private var cachedScrubberValue = -1.0
+    private var accessibilityVisible = true
+    private var railTrackingArea: NSTrackingArea?
+    private var isPointerInside = false
+    private var isMoreMenuOpen = false
+
+    var interactionStateDidChange: (() -> Void)?
+
+    var hasActiveInteraction: Bool {
+        isPointerInside || isMoreMenuOpen || containsFirstResponder
+    }
+
+    private var containsFirstResponder: Bool {
+        guard var view = window?.firstResponder as? NSView else { return false }
+        while true {
+            if view === self { return true }
+            guard let parent = view.superview else { return false }
+            view = parent
+        }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -72,6 +92,29 @@ final class BottomRailView: NSView {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let railTrackingArea {
+            removeTrackingArea(railTrackingArea)
+        }
+        let area = NSTrackingArea(rect: bounds,
+                                  options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self,
+                                  userInfo: nil)
+        addTrackingArea(area)
+        railTrackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isPointerInside = true
+        interactionStateDidChange?()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isPointerInside = false
+        interactionStateDidChange?()
     }
 
     @objc private func handleBottomRailButtonVisibilityChanged() {
@@ -122,7 +165,14 @@ final class BottomRailView: NSView {
         // NSMenu dismisses automatically on visibility or settings changes via system dismiss.
         applySkipDurationSettings()
         invalidateCachedDisplayState()
+        syncAccessibilityExposure()
         needsLayout = true
+    }
+
+    func setAccessibilityVisible(_ visible: Bool) {
+        accessibilityVisible = visible
+        syncAccessibilityExposure()
+        window?.recalculateKeyViewLoop()
     }
 
     func applySkipDurationSettings() {
@@ -173,6 +223,7 @@ final class BottomRailView: NSView {
 
         guard let player else {
             setPlaybackButtonsEnabled(false)
+            scrubber.isEnabled = false
             updateBookmarkButtonState()
             return
         }
@@ -183,9 +234,13 @@ final class BottomRailView: NSView {
             cachedPlayPauseSymbol = playSymbol
             playPauseButton.configureSymbol(playSymbol,
                                             pointSize: 15,
-                                            accessibilityLabel: "Play or Pause",
+                                            accessibilityLabel: player.isPlaying ? "Pause" : "Play",
                                             help: "Play / Pause (Space)")
         }
+        playPauseButton.setAccessibilityValue(player.isPlaying ? "playing" : "paused")
+        scrubber.isEnabled = hasMedia
+        scrubber.setAccessibilityLabel("Playback position")
+        scrubber.setAccessibilityHelp("Adjust the current playback time")
 
         updateScrubberFromPlayer(player)
 
@@ -195,6 +250,8 @@ final class BottomRailView: NSView {
             ? "\(elapsed)  \(MediaFileSupport.durationLoadingText)"
             : "\(elapsed)  \(remaining)"
         setLabel(elapsedLabel, cached: &cachedElapsedText, text: timeText)
+        elapsedLabel.setAccessibilityValue(timeText)
+        scrubber.setAccessibilityValueDescription("\(timeText), \(Int((scrubber.doubleValue * 100).rounded())) percent")
         // remainingLabel is always hidden; combined time is shown in elapsedLabel
 
         if let audio = player.audio {
@@ -206,22 +263,26 @@ final class BottomRailView: NSView {
                                              accessibilityLabel: "Mute or Unmute",
                                              help: "Mute / Unmute")
             }
+            volumeButton.setAccessibilityValue(audio.volume == 0 ? "muted" : "unmuted")
         }
 
         rewindButton.isEnabled = hasMedia
         forwardButton.isEnabled = hasMedia
         playPauseButton.isEnabled = hasMedia
+        volumeButton.isEnabled = hasMedia
         prevButton.isEnabled = hasMedia && (controller?.hasPrevious ?? false)
         nextButton.isEnabled = hasMedia && (controller?.hasNext ?? false)
 
         queueButton.isEnabled = controller != nil
         queueButton.isToggled = controller?.isQueuePageOpen ?? false
+        queueButton.setAccessibilityValue(queueButton.isToggled ? "Queue Page open" : "Queue Page closed")
 
         updateShuffleButtonState()
 
         repeatButton.isEnabled = hasMedia
         let repeatActive = controller?.isRepeatOne ?? false
         repeatButton.isToggled = repeatActive
+        repeatButton.setAccessibilityValue(repeatActive ? "Repeat One on" : "Repeat One off")
         let repeatSymbol = repeatActive ? "repeat.1" : "repeat"
         if repeatSymbol != cachedRepeatSymbol {
             cachedRepeatSymbol = repeatSymbol
@@ -304,7 +365,7 @@ final class BottomRailView: NSView {
             (playPauseButton, playSize),
             (nextButton, buttonSize),
             (forwardButton, buttonSize)
-        ]
+        ].filter { !$0.0.isHidden }
         let centerWidth = center.reduce(CGFloat(0)) { $0 + $1.1 } + CGFloat(center.count - 1) * gap
         let maxCenterLeft = rightClusterLeft - centerWidth - gap
         let centerGroupLeft = min(maxCenterLeft, max(leftX + gap, (w - centerWidth) / 2))
@@ -328,6 +389,7 @@ final class BottomRailView: NSView {
                                           centerGroupCenterX - timeLabelW / 2))
         elapsedLabel.frame = NSRect(x: timeLabelX, y: timeLabelY, width: timeLabelW, height: timeLabelH)
         remainingLabel.frame = .zero   // combined time shown in elapsedLabel
+        syncAccessibilityExposure()
     }
 
     private func applyResponsiveVisibility(width: CGFloat) {
@@ -348,30 +410,37 @@ final class BottomRailView: NSView {
         repeatButton.isHidden    = !SettingsWindowController.isBottomRailShowReplayEnabled()   || width < 390
         volumeButton.isHidden    = !SettingsWindowController.isBottomRailShowVolumeEnabled()   || width < 360
         bookmarkButton.isHidden  = !SettingsWindowController.isBottomRailShowBookmarkEnabled() || width < 560
+        // Preserve the centered transport hierarchy without overlap when an open
+        // Queue Page leaves the media surface extremely narrow. Keyboard commands
+        // remain available; controls return automatically as width is restored.
+        rewindButton.isHidden = width < 360
+        forwardButton.isHidden = width < 360
+        prevButton.isHidden = width < 280
+        nextButton.isHidden = width < 280
         moreButton.isHidden = width < 330
-        settingsButton.isHidden = width < 330
+        settingsButton.isHidden = true // Settings remains available in the More menu.
     }
 
     private func setupViews() {
         veil.wantsLayer = true
         addSubview(veil)
 
-        configure(queueButton, symbol: "square.split.2x1", label: "Toggle Queue Page", help: "Toggle Queue Page", action: #selector(queueTapped), style: .utility, size: 11)
+        configure(queueButton, symbol: "square.split.2x1", label: "Toggle Queue Page", help: "Toggle Queue Page", identifier: "player.rail.queue", action: #selector(queueTapped), style: .utility, size: 11)
         updatePrefixButtonLabels()
-        configure(dPrefixButton, symbol: nil, label: "Apply Primary Custom Prefix", help: "Rename: apply primary custom prefix (Q)", action: #selector(dPrefixTapped), style: .prefixPrimary, title: dPrefixButton.title, size: 11)
-        configure(secondaryPrefixButton, symbol: nil, label: "Apply Secondary Custom Prefix", help: "Rename: apply secondary custom prefix (Option-Q)", action: #selector(secondaryPrefixTapped), style: .prefixSecondary, title: secondaryPrefixButton.title, size: 11)
-        configure(rewindButton, symbol: "gobackward.10", label: "Rewind", help: "Rewind", action: #selector(rewindTapped), size: 13)
-        configure(prevButton, symbol: "backward.end.fill", label: "Previous File", help: "Previous file (Z)", action: #selector(prevTapped), size: 11)
-        configure(playPauseButton, symbol: "play.fill", label: "Play or Pause", help: "Play / Pause (Space)", action: #selector(playPauseTapped), style: .emphasized, size: 15)
-        configure(nextButton, symbol: "forward.end.fill", label: "Next File", help: "Next file (X)", action: #selector(nextTapped), size: 11)
-        configure(forwardButton, symbol: "goforward.10", label: "Skip Forward", help: "Skip Forward", action: #selector(forwardTapped), size: 13)
-        configure(volumeButton, symbol: "speaker.wave.2.fill", label: "Mute or Unmute", help: "Mute / Unmute", action: #selector(volumeTapped), size: 12)
-        configure(shuffleButton, symbol: "shuffle", label: "Shuffle", help: "Shuffle", action: #selector(shuffleTapped), size: 11)
-        configure(repeatButton, symbol: "repeat", label: "Repeat Current File", help: "Repeat current file", action: #selector(repeatTapped), size: 11)
-        configure(bookmarkButton, symbol: "bookmark", label: "Bookmark", help: "Bookmark (B)", action: #selector(bookmarkTapped), style: .bookmark, size: 11)
-        configure(moreButton, symbol: nil, label: "More Actions", help: "More actions overflow menu", action: #selector(moreTapped), title: "...")
-        configure(settingsButton, symbol: "gearshape", label: "Settings", help: "Settings (⌘,)", action: #selector(settingsTapped), size: 11)
-        configure(fullscreenButton, symbol: "arrow.up.left.and.arrow.down.right", label: "Toggle Fullscreen", help: "Toggle Fullscreen", action: #selector(fullscreenTapped), size: 11)
+        configure(dPrefixButton, symbol: nil, label: "Apply Primary Custom Prefix", help: "Rename: apply primary custom prefix (Q)", identifier: "player.rail.primaryPrefix", action: #selector(dPrefixTapped), style: .prefixPrimary, title: dPrefixButton.title, size: 11)
+        configure(secondaryPrefixButton, symbol: nil, label: "Apply Secondary Custom Prefix", help: "Rename: apply secondary custom prefix (Option-Q)", identifier: "player.rail.secondaryPrefix", action: #selector(secondaryPrefixTapped), style: .prefixSecondary, title: secondaryPrefixButton.title, size: 11)
+        configure(rewindButton, symbol: "gobackward.10", label: "Rewind", help: "Rewind", identifier: "player.rail.rewind", action: #selector(rewindTapped), size: 13)
+        configure(prevButton, symbol: "backward.end.fill", label: "Previous File", help: "Previous file (Z)", identifier: "player.rail.previous", action: #selector(prevTapped), size: 11)
+        configure(playPauseButton, symbol: "play.fill", label: "Play or Pause", help: "Play / Pause (Space)", identifier: "player.rail.playPause", action: #selector(playPauseTapped), style: .emphasized, size: 15)
+        configure(nextButton, symbol: "forward.end.fill", label: "Next File", help: "Next file (X)", identifier: "player.rail.next", action: #selector(nextTapped), size: 11)
+        configure(forwardButton, symbol: "goforward.10", label: "Skip Forward", help: "Skip Forward", identifier: "player.rail.forward", action: #selector(forwardTapped), size: 13)
+        configure(volumeButton, symbol: "speaker.wave.2.fill", label: "Mute or Unmute", help: "Mute / Unmute", identifier: "player.rail.volume", action: #selector(volumeTapped), size: 12)
+        configure(shuffleButton, symbol: "shuffle", label: "Shuffle", help: "Shuffle", identifier: "player.rail.shuffle", action: #selector(shuffleTapped), size: 11)
+        configure(repeatButton, symbol: "repeat", label: "Repeat Current File", help: "Repeat current file", identifier: "player.rail.repeatOne", action: #selector(repeatTapped), size: 11)
+        configure(bookmarkButton, symbol: "bookmark", label: "Bookmark", help: "Bookmark (B)", identifier: "player.rail.bookmark", action: #selector(bookmarkTapped), style: .bookmark, size: 11)
+        configure(moreButton, symbol: "ellipsis", label: "More Actions", help: "More actions overflow menu", identifier: "player.rail.more", action: #selector(moreTapped), size: 12)
+        configure(settingsButton, symbol: "gearshape", label: "Settings", help: "Settings (⌘,)", identifier: "player.rail.settings", action: #selector(settingsTapped), size: 11)
+        configure(fullscreenButton, symbol: "arrow.up.left.and.arrow.down.right", label: "Toggle Fullscreen", help: "Toggle Fullscreen", identifier: "player.rail.fullscreen", action: #selector(fullscreenTapped), size: 11)
 
         for label in [elapsedLabel, remainingLabel] {
             label.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
@@ -381,6 +450,7 @@ final class BottomRailView: NSView {
             addSubview(label)
         }
         elapsedLabel.setAccessibilityLabel("Playback time")
+        elapsedLabel.setAccessibilityIdentifier("player.rail.time")
 
         // Draw the scrubber bar at the very top of the slider frame so the bar
         // visually reads as the top edge of the rail veil (no transparent strip
@@ -392,6 +462,9 @@ final class BottomRailView: NSView {
         scrubber.isContinuous = true
         scrubber.target = self
         scrubber.action = #selector(scrubberMoved(_:))
+        scrubber.setAccessibilityLabel("Playback position")
+        scrubber.setAccessibilityHelp("Adjust the current playback time")
+        scrubber.setAccessibilityIdentifier("player.rail.scrubber")
         scrubber.scrubDidBegin = { [weak self] in
             guard let self else { return }
             self.pendingSeekPosition = nil
@@ -417,6 +490,17 @@ final class BottomRailView: NSView {
         }
         addSubview(scrubber)
 
+        let railButtons = [
+            queueButton, dPrefixButton, secondaryPrefixButton, rewindButton, prevButton,
+            playPauseButton, nextButton, forwardButton, volumeButton, shuffleButton,
+            repeatButton, bookmarkButton, moreButton, settingsButton, fullscreenButton
+        ]
+        for button in railButtons {
+            button.interactionStateDidChange = { [weak self] in
+                self?.interactionStateDidChange?()
+            }
+        }
+
         applyVisibilitySettings()
     }
 
@@ -424,6 +508,7 @@ final class BottomRailView: NSView {
                            symbol: String?,
                            label: String,
                            help: String,
+                           identifier: String,
                            action: Selector,
                            style: RailButton.Style = .normal,
                            title: String = "",
@@ -431,6 +516,7 @@ final class BottomRailView: NSView {
         button.railStyle = style
         button.target = self
         button.action = action
+        button.setAccessibilityIdentifier(identifier)
         button.title = title
         if let symbol {
             button.configureSymbol(symbol, pointSize: size, accessibilityLabel: label, help: help)
@@ -441,6 +527,18 @@ final class BottomRailView: NSView {
             button.toolTip = help
         }
         addSubview(button)
+    }
+
+    private func syncAccessibilityExposure() {
+        let controls: [NSView] = [
+            queueButton, dPrefixButton, secondaryPrefixButton, rewindButton, prevButton,
+            playPauseButton, nextButton, forwardButton, volumeButton, shuffleButton,
+            repeatButton, bookmarkButton, moreButton, settingsButton, fullscreenButton,
+            elapsedLabel, scrubber
+        ]
+        for control in controls {
+            control.setAccessibilityElement(accessibilityVisible && !control.isHidden)
+        }
     }
 
     private func place(_ button: RailButton, x: CGFloat, y: CGFloat, size: CGFloat) {
@@ -473,14 +571,16 @@ final class BottomRailView: NSView {
     }
 
     private func updateForImageMode() {
+        let mediaKind = isGIFMode ? "animated GIF" : "image"
         let playSymbol = imageModeIsPlaying ? "pause.fill" : "play.fill"
         if playSymbol != cachedPlayPauseSymbol {
             cachedPlayPauseSymbol = playSymbol
             playPauseButton.configureSymbol(playSymbol,
                                             pointSize: 15,
-                                            accessibilityLabel: "Play or Pause",
+                                            accessibilityLabel: imageModeIsPlaying ? "Pause \(mediaKind)" : "Resume \(mediaKind)",
                                             help: "Play / Pause (Space)")
         }
+        playPauseButton.setAccessibilityValue(imageModeIsPlaying ? "playing" : "paused")
         if !isScrubbing {
             let pos = imageModeDuration > 0 ? min(1.0, imageModeElapsed / imageModeDuration) : 0
             if abs(pos - cachedScrubberValue) > 0.001 {
@@ -490,17 +590,36 @@ final class BottomRailView: NSView {
         }
         setLabel(elapsedLabel, cached: &cachedElapsedText,
                  text: "\(formatImageTime(imageModeElapsed))  \(formatImageTime(imageModeDuration))")
+        elapsedLabel.setAccessibilityValue(elapsedLabel.stringValue)
+        scrubber.isEnabled = false
+        scrubber.setAccessibilityLabel(isGIFMode ? "Animated GIF progress" : "Image slideshow progress")
+        scrubber.setAccessibilityHelp("Displays progress; image and GIF progress cannot be scrubbed")
+        scrubber.setAccessibilityValueDescription(
+            "\(elapsedLabel.stringValue), \(Int((scrubber.doubleValue * 100).rounded())) percent"
+        )
         // remainingLabel is always hidden; combined time is shown in elapsedLabel
         rewindButton.isEnabled = false
         forwardButton.isEnabled = false
+        volumeButton.isEnabled = false
         playPauseButton.isEnabled = true
         prevButton.isEnabled = controller?.hasPrevious ?? false
         nextButton.isEnabled = controller?.hasNext ?? false
         queueButton.isEnabled = controller != nil
         queueButton.isToggled = controller?.isQueuePageOpen ?? false
+        queueButton.setAccessibilityValue(queueButton.isToggled ? "Queue Page open" : "Queue Page closed")
         updateShuffleButtonState()
         repeatButton.isEnabled = true
-        repeatButton.isToggled = controller?.isRepeatOne ?? false
+        let repeatActive = controller?.isRepeatOne ?? false
+        repeatButton.isToggled = repeatActive
+        repeatButton.setAccessibilityValue(repeatButton.isToggled ? "Repeat One on" : "Repeat One off")
+        let repeatSymbol = repeatActive ? "repeat.1" : "repeat"
+        if repeatSymbol != cachedRepeatSymbol {
+            cachedRepeatSymbol = repeatSymbol
+            repeatButton.configureSymbol(repeatSymbol,
+                                         pointSize: 11,
+                                         accessibilityLabel: "Repeat Current File",
+                                         help: "Repeat current file")
+        }
         updatePrefixButtons()
         updateBookmarkButtonState()
     }
@@ -530,6 +649,8 @@ final class BottomRailView: NSView {
         if shuffleButton.toolTip != help {
             shuffleButton.configureSymbol(symbol, pointSize: 11, accessibilityLabel: label, help: help)
         }
+        let state = endlessOn ? "Endless Shuffle on" : shuffleOn ? "Shuffle on" : "Shuffle off"
+        shuffleButton.setAccessibilityValue(state)
     }
 
     private func updatePrefixButtons() {
@@ -632,9 +753,13 @@ final class BottomRailView: NSView {
         addItem(title: "Settings", action: .settings, isOn: false, isEnabled: true)
 
         // Anchor above the more button; AppKit adjusts for screen edges automatically.
+        isMoreMenuOpen = true
+        interactionStateDidChange?()
         menu.popUp(positioning: nil,
                    at: NSPoint(x: moreButton.frame.minX, y: moreButton.frame.maxY),
                    in: self)
+        isMoreMenuOpen = false
+        interactionStateDidChange?()
     }
 
     @objc private func handleMoreMenuAction(_ sender: NSMenuItem) {
@@ -688,11 +813,6 @@ fileprivate enum MoreMenuAction {
 /// playback control bar. Click-to-seek and drag-to-seek remain functional
 /// because the slider frame is the full hit-test area.
 fileprivate final class TopAlignedKnoblessSliderCell: NSSliderCell {
-    override var focusRingType: NSFocusRingType {
-        get { return .none }
-        set {}
-    }
-
     override func drawKnob(_ knobRect: NSRect) {}
 
     override func drawBar(inside rect: NSRect, flipped: Bool) {

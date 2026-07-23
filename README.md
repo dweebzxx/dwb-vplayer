@@ -14,15 +14,27 @@
 
 ## Overview
 
-dwb player is a native Swift/AppKit media player for macOS 13 and newer. Version 4.2.2 focuses on local media playback, fast queue building, independent player windows, Finder-style file ordering, and direct controls for working through files on disk.
+dwb player is a native Swift/AppKit media player for macOS 13 and newer. The latest public source release is 4.2.2. This checkout contains locally implemented, not-yet-published 4.2.4 work; do not describe 4.2.4 as released until it is committed, pushed, tagged, and released. The app focuses on local media playback, fast queue building, independent player windows, Finder-style file ordering, and direct controls for working through files on disk.
 
 Playback is powered by VLCKit through Swift Package Manager. dwb player is local-only: it does not provide streaming, cloud sync, telemetry, transcoding, or media-library management.
 
-## Current Release Highlights
+## Current Release Highlights (v4.2.2)
 
 - Standardized public app naming to `dwb player` across the interface and documentation.
 - Refreshed Settings and About sections with updated attributions and links.
 - Hardened multi-window autoplay transitions by reusing the VLCKit player during normal auto-advance to prevent configuration hangs.
+
+## Unreleased (local work)
+
+- Native Queue search clear action.
+- Still-image slideshow durations include 0.5 and 0.75 seconds.
+- Filtered/bookmarked Queue multi-selection deletion supports Delete, Backspace, and Forward Delete while preserving safe row mapping and context targeting.
+- Persistent, nonmodal, per-window intake recovery for unsupported or disabled media, empty/failed folder scans, rescans, and unavailable folders.
+- Current Queue Page visual/stability improvements, including corrected accent treatment and guarded row rendering.
+- Keyboard focus/accessibility state and stable automation identifiers for applicable rail, Queue, recovery, and Settings controls.
+- Responsive rail and Queue layouts, filtered-empty recovery, responsive Queue footer/prefix overflow, scanning presentation, refined Settings/About layout, title overlay, and quiet Queue/video divider.
+- Obsolete Queue Duration/Size visibility controls removed while metadata remains on cards.
+- About action label: `View on GitHub`.
 
 ## Features
 
@@ -32,6 +44,7 @@ Playback is powered by VLCKit through Swift Package Manager. dwb player is local
 - VLCKit-backed local video playback.
 - Common local video formats: `mp4`, `m4v`, `mov`, `avi`, `flv`, `f4v`, `wmv`, `asf`, `mkv`, `ts`, `mts`, `m2ts`, `m2t`, `mpg`, `3gp`, `3g2`, `vob`, `ogv`, and `ogm`.
 - Still-image and animated GIF playback with configurable slideshow duration and GIF loop count. Supported image formats: `jpg`, `jpeg`, `jfif`, `png`, `gif`, `tiff`, `tif`, `bmp`, `heic`, `heif`, and `webp`.
+- Still-image slideshow intervals include 0.5 and 0.75 seconds in addition to the existing choices.
 - Drag-and-drop, Finder/Open With, Dock open, menu open, and recursive folder expansion for supported local media files.
 - Folder import uses Finder-style natural filename ordering by display filename, with deterministic path tie-breaks.
 - Top-insert behavior for explicitly opened or dropped files, so new files can be queued quickly.
@@ -43,13 +56,21 @@ Playback is powered by VLCKit through Swift Package Manager. dwb player is local
 ### Queue
 
 - Full Queue Page with filename, duration, file size, search/filter, bookmark filter, and total queue duration.
+- Queue search has a native clear action.
 - Manual queue ordering by row drag, plus sort modes for Name A-Z, Name Z-A, Size Low-High, Size High-Low, Duration Short-Long, and Duration Long-Short.
 - Name A-Z and Name Z-A sorting use the same Finder-style natural filename comparison as folder import.
 - Single-click row selection and double-click-to-play.
+- Filtered/bookmarked multi-selection supports Delete, Backspace, and Forward Delete; context actions retain their clicked-row target.
 - Multi-select queue operations, selected-row Delete/Backspace removal, Remove All, Clear Queue, and rescan.
+- The card-style Queue Page no longer offers separate Duration/Size column toggles; that metadata remains on each card.
 - Reveal in Finder and rename current file actions from the app menu or queue context actions.
 - Bookmark toggles in the playback controls, queue rows, and Queue Page filter.
 - Quick Queue support, including an optional setting to open the Queue Page when a player window opens.
+
+### Accessibility and Recovery
+
+- Keyboard-focusable rail and Queue controls expose labels and state; hidden rail controls leave focus and accessibility navigation. (VoiceOver/Full Keyboard Access visual verification is pending, not complete.)
+- Local-media intake errors stay in-window with safe recovery actions and preserve the current queue/playback state.
 
 ### Prefix Rename
 
@@ -74,7 +95,7 @@ Playback is powered by VLCKit through Swift Package Manager. dwb player is local
 
 - Settings window sections: Playback, Controls, Queue & Files, Shortcuts, Advanced, and About.
 - Configurable skip duration, slideshow duration, GIF loop count, accepted media types, optional playback-bar buttons, Queue Page behavior, rename options, titlebar behavior, Complete Video Mode, rail behavior, playback speed, and window opacity.
-- About section identifies `dwb player`, shows the app version/build, mentions the MIT License, identifies AppKit and VLCKit, and links to the GitHub repository and issue tracker.
+- About section identifies `dwb player`, shows the app version/build, mentions the MIT License, identifies AppKit and VLCKit, and links to the GitHub repository and issue tracker. The About page includes a "View on GitHub" action.
 - Programmatic menus cover dwb player, File, Playback, Video, and Window actions including Settings, Open, Reveal in Finder, Rename, Remove Current from Queue, Clear Queue, New Window, playback controls, speed, scale mode, Four Window Grid, Keep Window On Top, and Auto-hide Titlebar.
 - Developer/debugging support through the Debug Console with filtering, snapshots, export, and optional verbose autoplay tracing.
 
@@ -85,7 +106,7 @@ Playback is powered by VLCKit through Swift Package Manager. dwb player is local
 </p>
 
 <p align="center">
-  <img src="docs/images/dwb-queue.png" alt="dwb player Queue Page with search, sort, prefix actions, and total duration" width="900">
+  <img src="docs/images/dwb-queue.png" alt="dwb player Queue Page showing current layout with search clear, sort, prefix actions, and total duration" width="900">
 </p>
 
 <p align="center">

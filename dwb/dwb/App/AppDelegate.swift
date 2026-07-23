@@ -350,6 +350,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        let controller = frontPlayerWindowController
+        let commandState = PlayerCommandState(
+            hasPlayerWindow: controller != nil,
+            queueCount: controller?.playbackSet.count ?? 0,
+            hasCurrentMedia: controller?.currentMediaURL != nil,
+            canRenameCurrentMedia: controller?.canRenameCurrentMedia == true,
+            shuffleEnabled: controller?.isShuffleOn == true,
+            endlessShuffleEnabled: controller?.isEndlessShuffleOn == true,
+            repeatOneEnabled: controller?.isRepeatOne == true,
+            selectedPlaybackSpeedTag: PlaybackSpeedOption.validated(
+                controller?.currentPlaybackSpeed ?? PlaybackSpeedOption.normalRate
+            ).tag
+        )
+        if let result = PlayerCommandValidation.result(forTag: menuItem.tag, state: commandState) {
+            if let isOn = result.isOn {
+                menuItem.state = isOn ? .on : .off
+            }
+            return result.isEnabled
+        }
+
         switch menuItem.tag {
         case 1:
             menuItem.state = frontPlayerWindowController?.scaleMode == .fit     ? .on : .off
@@ -357,34 +377,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             menuItem.state = frontPlayerWindowController?.scaleMode == .fill    ? .on : .off
         case 3:
             menuItem.state = frontPlayerWindowController?.scaleMode == .stretch ? .on : .off
-        case 10: // Reveal in Finder
-            return frontPlayerWindowController?.currentMediaURL != nil
-        case 11: // Rename
-            return frontPlayerWindowController?.canRenameCurrentMedia == true
-        case 12: // Remove from Queue
-            return frontPlayerWindowController?.currentMediaURL != nil
-        case 13: // Clear Queue
-            return frontPlayerWindowController != nil
-        case 20: // Shuffle
-            menuItem.state = frontPlayerWindowController?.isShuffleOn == true ? .on : .off
-            return (frontPlayerWindowController?.playbackSet.count ?? 0) > 1
-        case 21: // Endless Shuffle
-            menuItem.state = frontPlayerWindowController?.isEndlessShuffleOn == true ? .on : .off
-            return (frontPlayerWindowController?.playbackSet.count ?? 0) > 0
-        case 22: // Repeat One
-            menuItem.state = frontPlayerWindowController?.isRepeatOne == true ? .on : .off
-            return frontPlayerWindowController?.currentMediaURL != nil
         case 30: // Keep Window On Top
             menuItem.state = frontPlayerWindowController?.isKeepAtTop == true ? .on : .off
         case 31: // Auto-hide Titlebar
             menuItem.state = SettingsWindowController.isAutoHideTitlebarEnabled() ? .on : .off
         default:
-            if menuItem.tag >= 1000,
-               let option = PlaybackSpeedOption.option(forTag: menuItem.tag - 1000) {
-                let current = frontPlayerWindowController?.currentPlaybackSpeed ?? PlaybackSpeedOption.normalRate
-                menuItem.state = PlaybackSpeedOption.validated(current) == option ? .on : .off
-                return frontPlayerWindowController != nil
-            }
             break
         }
         return true
