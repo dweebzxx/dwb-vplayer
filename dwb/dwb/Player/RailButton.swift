@@ -7,11 +7,35 @@ enum PlayerBrandColors {
                                     blue: 168.0 / 255.0,
                                     alpha: 1.0)
 
+    // Periwinkle 300 (#9AAAD8): light keyline/focus stop for dark surfaces.
+    static let periwinkleLight = NSColor(calibratedRed: 154.0 / 255.0,
+                                         green: 170.0 / 255.0,
+                                         blue: 216.0 / 255.0,
+                                         alpha: 1.0)
+
+    // Dark Ochre 700 (#A87820): reserved caution/attention status color.
+    static let darkOchre = NSColor(calibratedRed: 168.0 / 255.0,
+                                   green: 120.0 / 255.0,
+                                   blue: 32.0 / 255.0,
+                                   alpha: 1.0)
+
+    // Dark Ochre 300 (#E0C060): legible caution foreground on dark surfaces.
+    static let darkOchreLight = NSColor(calibratedRed: 224.0 / 255.0,
+                                        green: 192.0 / 255.0,
+                                        blue: 96.0 / 255.0,
+                                        alpha: 1.0)
+
     // Crimson (#B03828): reserved brand status color for destructive actions.
     static let crimson = NSColor(calibratedRed: 176.0 / 255.0,
                                  green: 56.0 / 255.0,
                                  blue: 40.0 / 255.0,
                                  alpha: 1.0)
+
+    // Crimson 300 (#E09888): legible error foreground on dark surfaces.
+    static let crimsonLight = NSColor(calibratedRed: 224.0 / 255.0,
+                                      green: 152.0 / 255.0,
+                                      blue: 136.0 / 255.0,
+                                      alpha: 1.0)
 }
 
 enum PrefixBrandColors {
@@ -80,10 +104,16 @@ final class RailButton: NSButton {
     }
 
     var isToggled: Bool = false {
-        didSet { updateAppearance() }
+        didSet {
+            setAccessibilityValue(isToggled ? "on" : "off")
+            updateAppearance()
+        }
     }
 
+    var interactionStateDidChange: (() -> Void)?
+
     private var isHovering = false
+    private var isPressing = false
     private var tracking: NSTrackingArea?
 
     override init(frame frameRect: NSRect) {
@@ -111,19 +141,62 @@ final class RailButton: NSButton {
     override func mouseEntered(with event: NSEvent) {
         isHovering = true
         updateAppearance()
+        interactionStateDidChange?()
     }
 
     override func mouseExited(with event: NSEvent) {
         isHovering = false
         updateAppearance()
+        interactionStateDidChange?()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard isEnabled else {
+            super.mouseDown(with: event)
+            return
+        }
+        isPressing = true
+        updateAppearance()
+        interactionStateDidChange?()
+        super.mouseDown(with: event)
+        isPressing = false
+        updateAppearance()
+        interactionStateDidChange?()
     }
 
     override var isEnabled: Bool {
-        didSet { updateAppearance() }
+        didSet {
+            setAccessibilityEnabled(isEnabled)
+            updateAppearance()
+        }
     }
 
     override var title: String {
         didSet { updateAppearance() }
+    }
+
+    override var acceptsFirstResponder: Bool {
+        isEnabled && !isHidden && alphaValue > 0.05
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        updateAppearance()
+        interactionStateDidChange?()
+        return accepted
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        updateAppearance()
+        interactionStateDidChange?()
+        return resigned
+    }
+
+    override var focusRingMaskBounds: NSRect { bounds.insetBy(dx: 2, dy: 2) }
+
+    override func drawFocusRingMask() {
+        NSBezierPath(ovalIn: focusRingMaskBounds).fill()
     }
 
     func configureSymbol(_ symbolName: String,
@@ -147,6 +220,7 @@ final class RailButton: NSButton {
     private func configure() {
         isBordered = false
         bezelStyle = .regularSquare
+        focusRingType = .none
         imageScaling = .scaleProportionallyDown
         wantsLayer = true
         layer?.borderWidth = 1
@@ -155,53 +229,75 @@ final class RailButton: NSButton {
     }
 
     private func updateAppearance() {
-        let enabledAlpha: CGFloat = isEnabled ? 1.0 : 0.34
+        let enabledAlpha: CGFloat = isEnabled ? 1.0 : 0.32
         alphaValue = enabledAlpha
 
-        // Hover-only circle outline: at rest the button shows only its icon/text on the
-        // transparent rail; the circular fill + border appear only while the cursor is
-        // over the button. Toggled state is communicated by the symbol/tint, not by a
-        // permanent outline.
-        let hoverFill:   CGFloat
-        let hoverBorder: CGFloat
         let tint: NSColor
         switch railStyle {
         case .normal:
-            hoverFill   = 0.14
-            hoverBorder = 0.18
             tint = .white
         case .emphasized:
-            hoverFill   = 0.22
-            hoverBorder = 0.20
             tint = .white
         case .utility:
-            hoverFill   = 0.16
-            hoverBorder = 0.20
-            tint = NSColor(calibratedRed: 0.78, green: 0.88, blue: 1.0, alpha: 1.0)
+            tint = PlayerBrandColors.periwinkleLight
         case .prefixPrimary:
-            hoverFill   = 0.16
-            hoverBorder = 0.20
             tint = PrefixBrandColors.primaryCustomPrefixColor
         case .prefixSecondary:
-            hoverFill   = 0.16
-            hoverBorder = 0.20
             tint = PrefixBrandColors.secondaryCustomPrefixColor
         case .bookmark:
-            hoverFill   = 0.16
-            hoverBorder = 0.20
-            tint = PlayerBrandColors.periwinkle
+            tint = PlayerBrandColors.periwinkleLight
         case .warning:
-            hoverFill   = 0.18
-            hoverBorder = 0.22
-            tint = NSColor(calibratedRed: 1.0, green: 0.75, blue: 0.34, alpha: 1.0)
+            tint = PlayerBrandColors.darkOchreLight
         }
 
-        let hoverActive = isHovering && isEnabled
-        let fillAlpha:   CGFloat = hoverActive ? (hoverFill   + (isToggled ? 0.06 : 0)) : 0
-        let borderAlpha: CGFloat = hoverActive ? (hoverBorder + (isToggled ? 0.06 : 0)) : 0
-        layer?.backgroundColor = NSColor.white.withAlphaComponent(fillAlpha).cgColor
-        layer?.borderColor     = NSColor.white.withAlphaComponent(borderAlpha).cgColor
-        let effectiveTint = tint.withAlphaComponent(isEnabled ? (isToggled ? 1.0 : 0.82) : 0.46)
+        let keyboardFocused = window?.firstResponder === self
+        let increasedContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        let activeColor: NSColor = {
+            switch railStyle {
+            case .prefixPrimary: return PrefixBrandColors.primaryCustomPrefixColor
+            case .prefixSecondary: return PrefixBrandColors.secondaryCustomPrefixColor
+            case .warning: return PlayerBrandColors.darkOchre
+            default: return PlayerBrandColors.periwinkle
+            }
+        }()
+
+        var fillColor = NSColor.clear
+        var borderColor = NSColor.clear
+        if railStyle == .emphasized && isEnabled {
+            fillColor = NSColor.white.withAlphaComponent(0.15)
+            borderColor = NSColor.white.withAlphaComponent(0.18)
+        }
+        if isToggled && isEnabled {
+            fillColor = activeColor.withAlphaComponent(isHovering ? 0.28 : 0.20)
+            borderColor = activeColor.withAlphaComponent(increasedContrast ? 0.90 : 0.56)
+        }
+        if isHovering && isEnabled {
+            fillColor = isToggled
+                ? activeColor.withAlphaComponent(0.28)
+                : NSColor.white.withAlphaComponent(railStyle == .emphasized ? 0.24 : 0.13)
+            borderColor = isToggled
+                ? activeColor.withAlphaComponent(0.68)
+                : NSColor.white.withAlphaComponent(increasedContrast ? 0.48 : 0.22)
+        }
+        if isPressing && isEnabled {
+            fillColor = isToggled
+                ? activeColor.withAlphaComponent(0.36)
+                : NSColor.white.withAlphaComponent(0.24)
+            borderColor = isToggled
+                ? activeColor.withAlphaComponent(0.82)
+                : NSColor.white.withAlphaComponent(0.34)
+        }
+        if keyboardFocused && isEnabled {
+            borderColor = PlayerBrandColors.periwinkleLight.withAlphaComponent(increasedContrast ? 1.0 : 0.88)
+            if fillColor.alphaComponent == 0 {
+                fillColor = PlayerBrandColors.periwinkle.withAlphaComponent(0.14)
+            }
+        }
+
+        layer?.backgroundColor = fillColor.cgColor
+        layer?.borderColor = borderColor.cgColor
+        layer?.borderWidth = keyboardFocused && increasedContrast ? 2 : 1
+        let effectiveTint = tint.withAlphaComponent(isEnabled ? (isToggled ? 1.0 : 0.84) : 0.48)
         contentTintColor = effectiveTint
         applyTitleTint(effectiveTint)
     }

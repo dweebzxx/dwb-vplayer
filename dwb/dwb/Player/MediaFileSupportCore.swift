@@ -9,7 +9,7 @@ enum MediaFileSupport {
     private static let fallbackGIFLoopDurationSeconds = 1.0
 
     static func configuredImageDurationMetadata(for url: URL,
-                                                stillImageDurationSeconds: Int,
+                                                stillImageDurationSeconds: Double,
                                                 gifLoopCount: Int) -> DurationMetadata {
         if isGIF(url) {
             if let metadata = gifPlaybackMetadata(for: url, loopCount: gifLoopCount) {
@@ -22,7 +22,7 @@ enum MediaFileSupport {
         }
 
         let clamped = max(0, stillImageDurationSeconds)
-        return DurationMetadata(seconds: Double(clamped),
+        return DurationMetadata(seconds: clamped,
                                 displayString: formatShortDuration(clamped))
     }
 
@@ -181,11 +181,15 @@ enum MediaFileSupport {
     }
 
     /// Formats seconds as "M:SS" (or "H:MM:SS" for ≥1 hour). Used for image duration display.
-    static func formatShortDuration(_ seconds: Int) -> String {
+    static func formatShortDuration(_ seconds: Double) -> String {
         let clamped = max(0, seconds)
-        let h = clamped / 3600
-        let m = (clamped % 3600) / 60
-        let s = clamped % 60
+        if clamped < 1 {
+            return String(format: "%.2fs", clamped).replacingOccurrences(of: "0s", with: "s")
+        }
+        let total = Int(clamped)
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
         return h > 0
             ? String(format: "%d:%02d:%02d", h, m, s)
             : String(format: "%d:%02d", m, s)
@@ -626,4 +630,3 @@ extension CGImage {
         fatalError("Failed to create empty fallback CGImage")
     }
 }
-

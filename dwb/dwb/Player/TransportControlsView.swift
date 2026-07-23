@@ -65,6 +65,7 @@ final class TransportControlsView: NSView {
         visibilityHoldProvider: { [weak self] in
             guard let self = self else { return false }
             if self.isScrubbing { return true }
+            if self.bottomRail.hasActiveInteraction { return true }
             if self.isImageMode { return !self.imageModeIsPlaying }
             return self.player?.isPlaying == false
         },
@@ -78,6 +79,9 @@ final class TransportControlsView: NSView {
     // MARK: - Image mode state (set by PlayerWindowController for slideshow items)
     var isImageMode: Bool = false {
         didSet { bottomRail.isImageMode = isImageMode }
+    }
+    var isGIFMode: Bool = false {
+        didSet { bottomRail.isGIFMode = isGIFMode }
     }
     var imageModeElapsed: Double = 0 {
         didSet { bottomRail.imageModeElapsed = imageModeElapsed }
@@ -137,6 +141,7 @@ final class TransportControlsView: NSView {
         bottomRail.controller = controller
         bottomRail.isHidden = true
         bottomRail.alphaValue = 1.0
+        bottomRail.setAccessibilityVisible(false)
         bottomRail.scrubDidBegin = { [weak self] in
             self?.isScrubbing = true
             self?.railAutohideController.beginSuspension(reveal: true)
@@ -145,6 +150,9 @@ final class TransportControlsView: NSView {
             guard let self = self else { return }
             self.isScrubbing = false
             self.railAutohideController.endSuspension()
+        }
+        bottomRail.interactionStateDidChange = { [weak self] in
+            self?.railAutohideController.noteMouseMoved()
         }
         addSubview(bottomRail)
 
@@ -457,6 +465,7 @@ final class TransportControlsView: NSView {
         let generation = railVisibilityGeneration
         if visible {
             bottomRail.isHidden = false
+            bottomRail.setAccessibilityVisible(true)
             if animated {
                 NSAnimationContext.runAnimationGroup { ctx in
                     ctx.duration = railAutohideController.reduceMotion ? 0.05 : 0.15
@@ -466,6 +475,7 @@ final class TransportControlsView: NSView {
                 bottomRail.alphaValue = 1.0
             }
         } else if animated {
+            bottomRail.setAccessibilityVisible(false)
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = railAutohideController.reduceMotion ? 0.05 : 0.22
                 bottomRail.animator().alphaValue = 0.0
@@ -476,6 +486,7 @@ final class TransportControlsView: NSView {
         } else {
             bottomRail.alphaValue = 0.0
             bottomRail.isHidden = true
+            bottomRail.setAccessibilityVisible(false)
         }
     }
 
@@ -662,6 +673,7 @@ final class TransportControlsView: NSView {
         bottomRail.player = player
         bottomRail.controller = controller
         bottomRail.isImageMode = isImageMode
+        bottomRail.isGIFMode = isGIFMode
         bottomRail.imageModeElapsed = imageModeElapsed
         bottomRail.imageModeDuration = imageModeDuration
         bottomRail.imageModeIsPlaying = imageModeIsPlaying
@@ -906,7 +918,7 @@ final class TransportControlsView: NSView {
     }
 
     private func formatImageTime(_ seconds: Double) -> String {
-        MediaFileSupport.formatShortDuration(max(0, Int(seconds)))
+        MediaFileSupport.formatShortDuration(max(0, seconds))
     }
 
     // MARK: - Helpers
@@ -949,7 +961,7 @@ final class ScrubberSlider: NSSlider {
         // Replace the default cell with the knobless variant before any property
         // configuration in setupViews() so min/max/value writes go to the new cell.
         cell = KnoblessSliderCell()
-        focusRingType = .none
+        focusRingType = .default
     }
     required init?(coder: NSCoder) { fatalError("programmatic only") }
 
@@ -957,6 +969,16 @@ final class ScrubberSlider: NSSlider {
         scrubDidBegin?()
         super.mouseDown(with: event)   // tracking loop — returns only on mouse-up
         scrubDidEnd?()
+    }
+
+    override var acceptsFirstResponder: Bool {
+        isEnabled && !isHidden && alphaValue > 0.05
+    }
+
+    override var focusRingMaskBounds: NSRect { bounds.insetBy(dx: 1, dy: 1) }
+
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: focusRingMaskBounds, xRadius: 3, yRadius: 3).fill()
     }
 }
 
@@ -971,11 +993,6 @@ final class ScrubberSlider: NSSlider {
 /// Mouse hit-testing in NSSliderCell is track-based (not knob-based) for continuous
 /// sliders without tick marks, so click-to-seek and drag-to-seek continue to work.
 private final class KnoblessSliderCell: NSSliderCell {
-    override var focusRingType: NSFocusRingType {
-        get { return .none }
-        set {}
-    }
-
     // No knob drawn — thumb is intentionally absent.
     override func drawKnob(_ knobRect: NSRect) {}
 

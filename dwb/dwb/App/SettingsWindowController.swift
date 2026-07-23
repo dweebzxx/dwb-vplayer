@@ -231,7 +231,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     }
 
     struct SkipDurationOption  { let seconds: Int;    let title: String }
-    struct ImageDurationOption { let seconds: Int;    let title: String }
+    struct ImageDurationOption { let seconds: Double; let title: String }
     struct GIFLoopCountOption  { let loops:   Int;    let title: String }
 
     static let skipDurationOptions: [SkipDurationOption] = [
@@ -241,11 +241,13 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         .init(seconds: 180, title: "3 minutes"),
     ]
     static let imageDurationOptions: [ImageDurationOption] = [
-        .init(seconds: 1,  title: "1 second"),
-        .init(seconds: 2,  title: "2 seconds"),
-        .init(seconds: 3,  title: "3 seconds"),
-        .init(seconds: 5,  title: "5 seconds"),
-        .init(seconds: 10, title: "10 seconds"),
+        .init(seconds: 0.5,  title: "0.5 seconds"),
+        .init(seconds: 0.75, title: "0.75 seconds"),
+        .init(seconds: 1,    title: "1 second"),
+        .init(seconds: 2,    title: "2 seconds"),
+        .init(seconds: 3,    title: "3 seconds"),
+        .init(seconds: 5,    title: "5 seconds"),
+        .init(seconds: 10,   title: "10 seconds"),
     ]
     static let gifLoopCountOptions: [GIFLoopCountOption] = [
         .init(loops: 1,  title: "1 loop"),
@@ -266,13 +268,24 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         Int((seconds * 10).rounded())
     }
 
-    static func validatedImageDurationSeconds(_ value: Int) -> Int {
-        imageDurationOptions.contains(where: { $0.seconds == value }) ? value : defaultImageDurationSeconds
+    static func imageDurationTag(for seconds: Double) -> Int {
+        Int((seconds * 100).rounded())
     }
-    static func currentImageDurationSeconds() -> Int {
-        let stored = UserDefaults.standard.integer(forKey: imageDurationKey)
+    static func imageDurationSeconds(forTag tag: Int) -> Double {
+        Double(tag) / 100.0
+    }
+    static func validatedImageDurationSeconds(_ value: Double) -> Double {
+        let tag = imageDurationTag(for: value)
+        return imageDurationOptions.first(where: { imageDurationTag(for: $0.seconds) == tag })?.seconds
+            ?? Double(defaultImageDurationSeconds)
+    }
+    static func currentImageDurationSeconds() -> Double {
+        let defaults = UserDefaults.standard
+        let stored = defaults.object(forKey: imageDurationKey)
+            .map { _ in defaults.double(forKey: imageDurationKey) }
+            ?? Double(defaultImageDurationSeconds)
         let v = validatedImageDurationSeconds(stored)
-        if v != stored { UserDefaults.standard.set(v, forKey: imageDurationKey) }
+        if v != stored { defaults.set(v, forKey: imageDurationKey) }
         return v
     }
     static func validatedGIFLoopCount(_ value: Int) -> Int {
@@ -396,14 +409,14 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
 
     private init() {
         let win = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 660, height: 450),
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 480),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         win.title = "Settings"
         win.isReleasedWhenClosed = false
-        win.minSize = NSSize(width: 560, height: 390)
+        win.minSize = NSSize(width: 680, height: 420)
         win.standardWindowButton(.closeButton)?.isHidden = false
         win.standardWindowButton(.closeButton)?.isEnabled = true
         win.standardWindowButton(.miniaturizeButton)?.isHidden = false
@@ -471,9 +484,11 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         spacer.heightAnchor.constraint(equalToConstant: 16).isActive = true
         sidebarStack.addArrangedSubview(spacer)
 
+        let sectionIdentifiers = ["playback", "controls", "queueFiles", "shortcuts", "advanced", "about"]
         for (index, name) in sectionNames.enumerated() {
             let btn = SettingsSidebarItemButton(title: name,
                                                 sectionIndex: index,
+                                                accessibilityIdentifier: "settings.sidebar.\(sectionIdentifiers[index])",
                                                 target: self,
                                                 action: #selector(sidebarButtonClicked(_:)))
             btn.translatesAutoresizingMaskIntoConstraints = false
@@ -560,6 +575,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
 
     private func buildPlaybackSection() -> NSView {
         configure(showTitleOverlayCheckbox, title: "Show title overlay on playback start", state: Self.isShowTitleOverlayEnabled())
+        showTitleOverlayCheckbox.setAccessibilityIdentifier("settings.playback.showTitleOverlay")
         
         skipDurationPopup.target = self
         skipDurationPopup.action = #selector(skipDurationPopupChanged(_:))
@@ -568,6 +584,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             skipDurationPopup.lastItem?.tag = opt.seconds
         }
         skipDurationPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
+        skipDurationPopup.setAccessibilityIdentifier("settings.playback.skipDuration")
         
         playbackSpeedPopup.target = self
         playbackSpeedPopup.action = #selector(playbackSpeedPopupChanged(_:))
@@ -576,14 +593,16 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             playbackSpeedPopup.lastItem?.tag = opt.tag
         }
         playbackSpeedPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
+        playbackSpeedPopup.setAccessibilityIdentifier("settings.playback.speed")
         
         imageDurationPopup.target = self
         imageDurationPopup.action = #selector(imageDurationPopupChanged(_:))
         for opt in Self.imageDurationOptions {
             imageDurationPopup.addItem(withTitle: opt.title)
-            imageDurationPopup.lastItem?.tag = opt.seconds
+            imageDurationPopup.lastItem?.tag = Self.imageDurationTag(for: opt.seconds)
         }
         imageDurationPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
+        imageDurationPopup.setAccessibilityIdentifier("settings.playback.imageDuration")
         
         gifLoopCountPopup.target = self
         gifLoopCountPopup.action = #selector(gifLoopCountPopupChanged(_:))
@@ -592,6 +611,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             gifLoopCountPopup.lastItem?.tag = opt.loops
         }
         gifLoopCountPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
+        gifLoopCountPopup.setAccessibilityIdentifier("settings.playback.gifLoopCount")
 
         let section1 = buildSection(title: "Playback behavior", rows: [
             buildRow(label: "Skip duration", control: skipDurationPopup),
@@ -601,12 +621,15 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
 
         let section2 = buildSection(title: "Images & animated GIFs", rows: [
             buildRow(label: "Image slideshow duration", control: imageDurationPopup),
-            buildRow(label: "GIF loop count before advancing", control: gifLoopCountPopup)
+            buildRow(label: "GIF loops before advancing", control: gifLoopCountPopup)
         ])
 
         configure(acceptVideoCheckbox, title: "Video", state: Self.acceptsVideoMedia())
         configure(acceptImagesCheckbox, title: "Images", state: Self.acceptsImageMedia())
         configure(acceptGIFCheckbox, title: "GIF", state: Self.acceptsGIFMedia())
+        acceptVideoCheckbox.setAccessibilityIdentifier("settings.playback.acceptVideo")
+        acceptImagesCheckbox.setAccessibilityIdentifier("settings.playback.acceptImages")
+        acceptGIFCheckbox.setAccessibilityIdentifier("settings.playback.acceptGIF")
 
         let section3 = buildSection(title: "Accept", rows: [
             buildRow(label: nil, control: acceptVideoCheckbox),
@@ -620,10 +643,14 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     // MARK: - Section: Controls
 
     private func buildControlsSection() -> NSView {
-        configure(autoHideCheckbox, title: "Auto-hide controls bar in windowed mode", state: UserDefaults.standard.bool(forKey: Self.autoHideKey))
+        configure(autoHideCheckbox, title: "Auto-hide playback bar in windowed mode", state: UserDefaults.standard.bool(forKey: Self.autoHideKey))
         configure(chromeReducedMotionCheckbox, title: "Reduce motion", state: UserDefaults.standard.bool(forKey: Self.chromeReducedMotionKey))
         configure(autoHideTitlebarCheckbox, title: "Auto-hide titlebar", state: Self.isAutoHideTitlebarEnabled())
-        configure(completeVideoWindowModeCheckbox, title: "Complete video mode (windowed)", state: Self.isCompleteVideoWindowModeEnabled())
+        configure(completeVideoWindowModeCheckbox, title: "Hide window chrome for edge-to-edge video", state: Self.isCompleteVideoWindowModeEnabled())
+        autoHideCheckbox.setAccessibilityIdentifier("settings.controls.autoHidePlaybackBar")
+        chromeReducedMotionCheckbox.setAccessibilityIdentifier("settings.controls.reduceMotion")
+        autoHideTitlebarCheckbox.setAccessibilityIdentifier("settings.controls.autoHideTitlebar")
+        completeVideoWindowModeCheckbox.setAccessibilityIdentifier("settings.controls.edgeToEdgeVideo")
 
         chromeAutohideThresholdPopup.target = self
         chromeAutohideThresholdPopup.action = #selector(chromeThresholdPopupChanged(_:))
@@ -632,12 +659,14 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             chromeAutohideThresholdPopup.lastItem?.tag = Self.chromeThresholdTag(for: opt.seconds)
         }
         chromeAutohideThresholdPopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
+        chromeAutohideThresholdPopup.setAccessibilityIdentifier("settings.controls.autoHideDelay")
 
         windowOpacitySlider.minValue = Double(Self.playerWindowOpacityMin * 100.0)
         windowOpacitySlider.maxValue = Double(Self.playerWindowOpacityMax * 100.0)
         windowOpacitySlider.target = self
         windowOpacitySlider.action = #selector(windowOpacitySliderChanged(_:))
         windowOpacitySlider.widthAnchor.constraint(equalToConstant: 200).isActive = true
+        windowOpacitySlider.setAccessibilityIdentifier("settings.controls.windowOpacity")
 
         windowOpacityPercentLabel.font = .systemFont(ofSize: NSFont.systemFontSize)
         windowOpacityPercentLabel.textColor = .secondaryLabelColor
@@ -648,20 +677,26 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         windowOpacityResetButton.bezelStyle = .rounded
         windowOpacityResetButton.target = self
         windowOpacityResetButton.action = #selector(resetWindowOpacity(_:))
+        windowOpacityResetButton.setAccessibilityIdentifier("settings.controls.resetWindowOpacity")
         
         let opacityStack = NSStackView(views: [windowOpacitySlider, windowOpacityPercentLabel, windowOpacityResetButton])
         opacityStack.orientation = .horizontal
         opacityStack.spacing = 10
         
-        configure(bottomRailShowXCheckbox,        title: "Show x_ button in playback bar",       state: Self.isBottomRailShowXEnabled())
+        configure(bottomRailShowXCheckbox,        title: "Show prefix buttons in playback bar",  state: Self.isBottomRailShowXEnabled())
         configure(bottomRailShowShuffleCheckbox,  title: "Show Shuffle button in playback bar",  state: Self.isBottomRailShowShuffleEnabled())
         configure(bottomRailShowReplayCheckbox,   title: "Show Replay button in playback bar",   state: Self.isBottomRailShowReplayEnabled())
         configure(bottomRailShowVolumeCheckbox,   title: "Show Volume button in playback bar",   state: Self.isBottomRailShowVolumeEnabled())
         configure(bottomRailShowBookmarkCheckbox, title: "Show Bookmark button in playback bar", state: Self.isBottomRailShowBookmarkEnabled())
+        bottomRailShowXCheckbox.setAccessibilityIdentifier("settings.controls.showPrefixButtons")
+        bottomRailShowShuffleCheckbox.setAccessibilityIdentifier("settings.controls.showShuffle")
+        bottomRailShowReplayCheckbox.setAccessibilityIdentifier("settings.controls.showRepeat")
+        bottomRailShowVolumeCheckbox.setAccessibilityIdentifier("settings.controls.showVolume")
+        bottomRailShowBookmarkCheckbox.setAccessibilityIdentifier("settings.controls.showBookmark")
 
         let section1 = buildSection(title: "Playback bar behavior", rows: [
             buildRow(label: nil, control: autoHideCheckbox),
-            buildRow(label: "Rail auto-hide delay", control: chromeAutohideThresholdPopup),
+            buildRow(label: "Auto-hide delay", control: chromeAutohideThresholdPopup),
             buildRow(label: nil, control: chromeReducedMotionCheckbox)
         ])
 
@@ -686,8 +721,11 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
 
     private func buildQueueFilesSection() -> NSView {
         configure(customPrefixQueuePageCheckbox, title: "Enable one-click custom prefix rename", state: Self.isCustomPrefixQueuePageEnabled())
-        configure(customPrefixVideoPageCheckbox, title: "Show custom prefix button in player page", state: Self.isCustomPrefixVideoPageEnabled())
-        configure(queuePanelOpenAtLaunchCheckbox, title: "Open queue panel when a player window opens", state: UserDefaults.standard.bool(forKey: Self.queuePanelOpenAtLaunchKey))
+        configure(customPrefixVideoPageCheckbox, title: "Enable player prefix rename control", state: Self.isCustomPrefixVideoPageEnabled())
+        configure(queuePanelOpenAtLaunchCheckbox, title: "Open Queue Page with new player windows", state: UserDefaults.standard.bool(forKey: Self.queuePanelOpenAtLaunchKey))
+        customPrefixQueuePageCheckbox.setAccessibilityIdentifier("settings.queue.enablePrefixRename")
+        customPrefixVideoPageCheckbox.setAccessibilityIdentifier("settings.queue.enablePlayerPrefixControl")
+        queuePanelOpenAtLaunchCheckbox.setAccessibilityIdentifier("settings.queue.openAtLaunch")
 
         customPrefixValueTextField.isEditable = true
         customPrefixValueTextField.isBordered = true
@@ -698,6 +736,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         customPrefixValueTextField.delegate = self
         customPrefixValueTextField.toolTip = "Primary prefix applied to filename stem. The Q key and prefix button use this prefix. The \"/\" character is not allowed."
         customPrefixValueTextField.widthAnchor.constraint(equalToConstant: 220).isActive = true
+        customPrefixValueTextField.setAccessibilityIdentifier("settings.queue.primaryPrefix")
 
         customPrefixSecondaryValueTextField.isEditable = true
         customPrefixSecondaryValueTextField.isBordered = true
@@ -708,6 +747,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         customPrefixSecondaryValueTextField.delegate = self
         customPrefixSecondaryValueTextField.toolTip = "Secondary prefix. Available from the rename menu and Option-Q. Leave empty to use one prefix only. The \"/\" character is not allowed."
         customPrefixSecondaryValueTextField.widthAnchor.constraint(equalToConstant: 220).isActive = true
+        customPrefixSecondaryValueTextField.setAccessibilityIdentifier("settings.queue.secondaryPrefix")
 
         let section1 = buildSection(title: "Queue page rename", rows: [
             buildRow(label: nil, control: customPrefixQueuePageCheckbox),
@@ -717,7 +757,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
                      helperText: "Available from the rename menu and Option-Q. Leave empty to use one prefix only.")
         ])
 
-        let section2 = buildSection(title: "Player page buttons", rows: [
+        let section2 = buildSection(title: "Player controls", rows: [
             buildRow(label: nil, control: customPrefixVideoPageCheckbox)
         ])
 
@@ -733,17 +773,21 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private func buildAdvancedSection() -> NSView {
         configure(debugConsoleCheckbox, title: "Show debug console", state: Self.isDebugConsoleEnabled())
         configure(verboseAutoplayTraceCheckbox, title: "Verbose autoplay trace (debug builds only)", state: Self.isVerboseAutoplayTraceEnabled())
+        debugConsoleCheckbox.setAccessibilityIdentifier("settings.advanced.debugConsole")
+        verboseAutoplayTraceCheckbox.setAccessibilityIdentifier("settings.advanced.verboseAutoplay")
         restoreDefaultsButton.title = "Restore All Settings to Default"
         restoreDefaultsButton.bezelStyle = .rounded
         restoreDefaultsButton.target = self
         restoreDefaultsButton.action = #selector(restoreAllSettingsToDefault(_:))
         restoreDefaultsButton.translatesAutoresizingMaskIntoConstraints = false
+        restoreDefaultsButton.setAccessibilityIdentifier("settings.advanced.restoreDefaults")
 
         clearBookmarksButton.title = "Clear All Bookmarks…"
         clearBookmarksButton.bezelStyle = .rounded
         clearBookmarksButton.target = self
         clearBookmarksButton.action = #selector(clearAllBookmarks(_:))
         clearBookmarksButton.translatesAutoresizingMaskIntoConstraints = false
+        clearBookmarksButton.setAccessibilityIdentifier("settings.advanced.clearBookmarks")
 
         let section1 = buildSection(title: "Diagnostics", rows: [
             buildRow(label: nil, control: debugConsoleCheckbox),
@@ -770,7 +814,10 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         let version = info?["CFBundleShortVersionString"] as? String ?? "—"
         let build   = info?["CFBundleVersion"]            as? String ?? "—"
 
-        func makeLabel(_ text: String, size: CGFloat = NSFont.systemFontSize, weight: NSFont.Weight = .regular, color: NSColor = .labelColor) -> NSTextField {
+        func makeLabel(_ text: String,
+                       size: CGFloat = NSFont.systemFontSize,
+                       weight: NSFont.Weight = .regular,
+                       color: NSColor = .labelColor) -> NSTextField {
             let lbl = NSTextField(labelWithString: text)
             lbl.font = .systemFont(ofSize: size, weight: weight)
             lbl.textColor = color
@@ -784,72 +831,116 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         iconView.imageScaling = .scaleProportionallyUpOrDown
         iconView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            iconView.widthAnchor.constraint(equalToConstant: 108),
-            iconView.heightAnchor.constraint(equalToConstant: 108)
+            iconView.widthAnchor.constraint(equalToConstant: 88),
+            iconView.heightAnchor.constraint(equalToConstant: 88)
         ])
 
-        let nameLabel     = makeLabel("dwb player", size: 17, weight: .semibold)
-        let versionLabel  = makeLabel("Version \(version)  ·  Build \(build)", color: .secondaryLabelColor)
-        let descLabel     = makeLabel("Local media playback for macOS", color: .secondaryLabelColor)
-        let licenseLabel  = makeLabel("MIT License", color: .tertiaryLabelColor)
-        let platformLabel = makeLabel("Requires macOS 13 or later", color: .tertiaryLabelColor)
-        let techLabel     = makeLabel("Built with AppKit and VLCKit", color: .tertiaryLabelColor)
-        let vlcLabel      = makeLabel("VLC backend: \(Self.vlcBackendVersionText())", color: .tertiaryLabelColor)
+        let nameLabel = makeLabel("dwb player", size: 20, weight: .semibold)
+        let versionLabel = makeLabel("Version \(version)  ·  Build \(build)",
+                                     size: 11.5,
+                                     color: .secondaryLabelColor)
+        let descLabel = makeLabel("Local media playback for macOS",
+                                  size: 12,
+                                  color: .secondaryLabelColor)
+        let identityStack = NSStackView(views: [nameLabel, versionLabel, descLabel])
+        identityStack.orientation = .vertical
+        identityStack.alignment = .leading
+        identityStack.spacing = 5
+        identityStack.translatesAutoresizingMaskIntoConstraints = false
 
-        let githubButton = makeAboutLinkButton(title: "GitHub Repository", action: #selector(openGitHubRepository(_:)))
-        let issueButton = makeAboutLinkButton(title: "Report an Issue", action: #selector(openGitHubIssues(_:)))
-
-        let textStack = NSStackView(views: [nameLabel, versionLabel, descLabel, licenseLabel, platformLabel, techLabel, vlcLabel, githubButton, issueButton])
-        textStack.orientation = .vertical
-        textStack.alignment = .leading
-        textStack.spacing = 6
-        textStack.setCustomSpacing(10, after: nameLabel)
-        textStack.setCustomSpacing(4, after: versionLabel)
-        textStack.setCustomSpacing(10, after: descLabel)
-        textStack.setCustomSpacing(12, after: vlcLabel)
-        textStack.translatesAutoresizingMaskIntoConstraints = false
-
-        let headerStack = NSStackView(views: [iconView, textStack])
+        let headerStack = NSStackView(views: [iconView, identityStack])
         headerStack.orientation = .horizontal
-        headerStack.alignment = .top
-        headerStack.spacing = 16
+        headerStack.alignment = .centerY
+        headerStack.spacing = 18
         headerStack.translatesAutoresizingMaskIntoConstraints = false
 
-        let copyrightLabel = makeLabel("© dwb", color: .tertiaryLabelColor)
+        func metadataRow(label: String, value: String) -> NSView {
+            let key = makeLabel(label,
+                                size: 11,
+                                weight: .medium,
+                                color: NSColor.labelColor.withAlphaComponent(0.72))
+            key.alignment = .right
+            key.widthAnchor.constraint(equalToConstant: 82).isActive = true
+            let valueLabel = makeLabel(value, size: 11, color: .secondaryLabelColor)
+            valueLabel.lineBreakMode = .byTruncatingMiddle
+            valueLabel.toolTip = value
+            let row = NSStackView(views: [key, valueLabel])
+            row.orientation = .horizontal
+            row.alignment = .firstBaseline
+            row.spacing = 12
+            return row
+        }
+
+        let metadataStack = NSStackView(views: [
+            metadataRow(label: "License", value: "MIT License"),
+            metadataRow(label: "System", value: "macOS 13 or later"),
+            metadataRow(label: "Interface", value: "AppKit"),
+            metadataRow(label: "Playback", value: "VLCKit \(Self.vlcBackendVersionText())"),
+        ])
+        metadataStack.orientation = .vertical
+        metadataStack.alignment = .leading
+        metadataStack.spacing = 7
+
+        let separator = NSBox()
+        separator.boxType = .separator
+
+        // Keep external project links grouped in the About pane.
+        let githubButton = makeAboutLinkButton(
+            title: "View on GitHub",
+            action: #selector(openGitHubRepository(_:)),
+            identifier: "settings.about.github"
+        )
+        let issueButton = makeAboutLinkButton(
+            title: "Report an Issue",
+            action: #selector(openGitHubIssues(_:)),
+            identifier: "settings.about.issues"
+        )
+        let actionStack = NSStackView(views: [githubButton, issueButton])
+        actionStack.orientation = .horizontal
+        actionStack.spacing = 8
+
+        let contentStack = NSStackView(views: [headerStack, separator, metadataStack, actionStack])
+        contentStack.orientation = .vertical
+        contentStack.alignment = .leading
+        contentStack.spacing = 16
+        contentStack.setCustomSpacing(18, after: headerStack)
+        contentStack.setCustomSpacing(18, after: metadataStack)
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let copyrightLabel = makeLabel("© dwb", size: 10.5, color: .tertiaryLabelColor)
 
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(headerStack)
+        container.addSubview(contentStack)
         container.addSubview(copyrightLabel)
 
         NSLayoutConstraint.activate([
-            headerStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 24),
-            headerStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 24),
-            headerStack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -24),
+            contentStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 30),
+            contentStack.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            contentStack.widthAnchor.constraint(lessThanOrEqualToConstant: 420),
+            contentStack.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 28),
+            contentStack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -28),
+            separator.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
+            metadataStack.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
 
-            copyrightLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -24),
-            copyrightLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -16),
-            headerStack.bottomAnchor.constraint(lessThanOrEqualTo: copyrightLabel.topAnchor, constant: -16)
+            copyrightLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            copyrightLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -18),
+            contentStack.bottomAnchor.constraint(lessThanOrEqualTo: copyrightLabel.topAnchor, constant: -20)
         ])
 
         return container
     }
 
-    private func makeAboutLinkButton(title: String, action: Selector) -> NSButton {
+    private func makeAboutLinkButton(title: String,
+                                     action: Selector,
+                                     identifier: String) -> NSButton {
         let button = NSButton(title: title, target: self, action: action)
-        button.isBordered = false
-        button.bezelStyle = .inline
-        button.alignment = .left
-        button.contentTintColor = .linkColor
+        button.isBordered = true
+        button.bezelStyle = .rounded
+        button.font = .systemFont(ofSize: 11, weight: .medium)
+        button.contentTintColor = .labelColor
+        button.setAccessibilityIdentifier(identifier)
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.attributedTitle = NSAttributedString(
-            string: title,
-            attributes: [
-                .foregroundColor: NSColor.linkColor,
-                .underlineStyle: NSUnderlineStyle.single.rawValue,
-                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize)
-            ]
-        )
         return button
     }
 
@@ -931,25 +1022,22 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         btn.translatesAutoresizingMaskIntoConstraints = false
     }
 
-    /// Suite accent #4C62A8 — matches dwb skim's DwbSkimProductSpec.accent.
-    fileprivate static let suiteAccent = NSColor(calibratedRed: 76.0 / 255.0,
-                                                 green: 98.0 / 255.0,
-                                                 blue: 168.0 / 255.0,
-                                                 alpha: 1.0)
+    /// Brand-authorized Periwinkle 700 and 300 stops for selected and focus states.
+    fileprivate static let suiteAccent = PlayerBrandColors.periwinkle
+    fileprivate static let suiteAccentLight = PlayerBrandColors.periwinkleLight
 
-    /// Flat settings section: all-caps accent header above the rows, no card chrome.
-    /// Matches the dwb skim GeneralSettingsView section-header direction.
+    /// Flat settings section with a quiet brand-accent header and no card chrome.
     private func buildSection(title: String, rows: [NSView]) -> NSView {
-        let header = NSTextField(labelWithString: title.uppercased())
-        header.font = .systemFont(ofSize: 10, weight: .bold)
-        header.textColor = Self.suiteAccent.withAlphaComponent(0.8)
+        let header = NSTextField(labelWithString: title)
+        header.font = .systemFont(ofSize: 11, weight: .semibold)
+        header.textColor = Self.suiteAccentLight.withAlphaComponent(0.88)
         header.translatesAutoresizingMaskIntoConstraints = false
 
         let stack = NSStackView(views: [header] + rows)
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 8
-        stack.setCustomSpacing(12, after: header)
+        stack.spacing = 9
+        stack.setCustomSpacing(10, after: header)
         stack.translatesAutoresizingMaskIntoConstraints = false
         return stack
     }
@@ -958,12 +1046,12 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 2
+        stack.spacing = 4
         
         let hStack = NSStackView()
         hStack.orientation = .horizontal
         hStack.alignment = .firstBaseline
-        hStack.spacing = 16
+        hStack.spacing = 14
         
         if let labelText = label {
             let lbl = NSTextField(labelWithString: labelText)
@@ -975,7 +1063,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             lbl.drawsBackground = false
             lbl.alignment = .left
             lbl.translatesAutoresizingMaskIntoConstraints = false
-            lbl.widthAnchor.constraint(equalToConstant: 220).isActive = true
+            lbl.widthAnchor.constraint(equalToConstant: 190).isActive = true
             hStack.addArrangedSubview(lbl)
         }
         
@@ -997,7 +1085,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             if label != nil {
                 let pad = NSView()
                 pad.translatesAutoresizingMaskIntoConstraints = false
-                pad.widthAnchor.constraint(equalToConstant: 220 + 16).isActive = true
+                pad.widthAnchor.constraint(equalToConstant: 190 + 14).isActive = true
                 let nStack = NSStackView(views: [pad, note])
                 nStack.spacing = 0
                 stack.addArrangedSubview(nStack)
@@ -1042,7 +1130,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         let stack = NSStackView(views: sections)
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 24
+        stack.spacing = 22
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         let container = NSView()
@@ -1058,12 +1146,12 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         documentView.translatesAutoresizingMaskIntoConstraints = false
         documentView.addSubview(stack)
 
-        // Shared suite rhythm: 16pt vertical / 24pt horizontal content margins.
+        // Shared settings rhythm: 20pt vertical / 28pt horizontal content margins.
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: documentView.topAnchor, constant: 16),
-            stack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor, constant: 24),
-            stack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor, constant: -24),
-            stack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor, constant: -16)
+            stack.topAnchor.constraint(equalTo: documentView.topAnchor, constant: 20),
+            stack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor, constant: 28),
+            stack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor, constant: -28),
+            stack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor, constant: -20)
         ])
         
         scrollView.documentView = documentView
@@ -1185,7 +1273,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     }
 
     @objc private func imageDurationPopupChanged(_ sender: NSPopUpButton) {
-        let selected = Self.validatedImageDurationSeconds(sender.selectedTag())
+        let selected = Self.validatedImageDurationSeconds(Self.imageDurationSeconds(forTag: sender.selectedTag()))
         UserDefaults.standard.set(selected, forKey: Self.imageDurationKey)
         NotificationCenter.default.post(name: .imageDurationChanged, object: nil)
         DebugConsoleController.log("settings", "imageDuration=\(selected)s")
@@ -1343,7 +1431,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
 
         skipDurationPopup.selectItem(withTag: Self.currentSkipDurationSeconds())
         syncPlaybackSpeedControlsFromTarget()
-        imageDurationPopup.selectItem(withTag: Self.currentImageDurationSeconds())
+        imageDurationPopup.selectItem(withTag: Self.imageDurationTag(for: Self.currentImageDurationSeconds()))
         gifLoopCountPopup.selectItem(withTag: Self.currentGIFLoopCount())
 
         let rawThreshold = UserDefaults.standard.double(forKey: Self.chromeAutohideThresholdKey)
@@ -1418,6 +1506,11 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         NSApp.activate(ignoringOtherApps: true)
         orderAbovePlayerWindows()
     }
+
+    func openAcceptSettings() {
+        selectSection(0)
+        openSettings()
+    }
 }
 
 // MARK: - Suite-shared settings sidebar item
@@ -1427,12 +1520,22 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
 private final class SettingsSidebarItemButton: NSButton {
     let sectionIndex: Int
     private let itemTitle: String
+    private var isHovering = false
+    private var isPressing = false
+    private var trackingAreaReference: NSTrackingArea?
 
     var isSelected: Bool = false {
-        didSet { updateAppearance() }
+        didSet {
+            setAccessibilityValue(isSelected ? "selected" : "not selected")
+            updateAppearance()
+        }
     }
 
-    init(title: String, sectionIndex: Int, target: AnyObject?, action: Selector) {
+    init(title: String,
+         sectionIndex: Int,
+         accessibilityIdentifier: String,
+         target: AnyObject?,
+         action: Selector) {
         self.sectionIndex = sectionIndex
         self.itemTitle = title
         super.init(frame: .zero)
@@ -1440,12 +1543,72 @@ private final class SettingsSidebarItemButton: NSButton {
         self.action = action
         setButtonType(.momentaryPushIn)
         isBordered = false
+        focusRingType = .none
         wantsLayer = true
-        layer?.cornerRadius = 6
+        layer?.cornerRadius = 7
+        layer?.borderWidth = 1
+        setAccessibilityLabel(title)
+        setAccessibilityHelp("Show \(title) settings")
+        setAccessibilityIdentifier(accessibilityIdentifier)
+        setAccessibilityValue("not selected")
         updateAppearance()
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    override var acceptsFirstResponder: Bool {
+        isEnabled && !isHidden
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingAreaReference {
+            removeTrackingArea(trackingAreaReference)
+        }
+        let area = NSTrackingArea(rect: bounds,
+                                  options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                  owner: self,
+                                  userInfo: nil)
+        addTrackingArea(area)
+        trackingAreaReference = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovering = true
+        updateAppearance()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovering = false
+        updateAppearance()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        isPressing = true
+        updateAppearance()
+        super.mouseDown(with: event)
+        isPressing = false
+        updateAppearance()
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        updateAppearance()
+        return accepted
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        updateAppearance()
+        return resigned
+    }
+
+    override var isEnabled: Bool {
+        didSet {
+            setAccessibilityEnabled(isEnabled)
+            updateAppearance()
+        }
+    }
 
     /// Up/Down arrows switch panes — preserves the arrow-key navigation the
     /// previous NSTableView sidebar provided.
@@ -1469,20 +1632,39 @@ private final class SettingsSidebarItemButton: NSButton {
 
     private func updateAppearance() {
         let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.firstLineHeadIndent = 10
+        paragraphStyle.firstLineHeadIndent = 12
         paragraphStyle.lineBreakMode = .byTruncatingTail
 
+        let focused = window?.firstResponder === self
+        let increasedContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         let textColor: NSColor
         let font: NSFont
         if isSelected {
-            layer?.backgroundColor = SettingsWindowController.suiteAccent.cgColor
+            layer?.backgroundColor = SettingsWindowController.suiteAccent
+                .withAlphaComponent(isPressing ? 0.92 : isHovering ? 0.84 : 0.76).cgColor
             textColor = .white
             font = .systemFont(ofSize: 13, weight: .semibold)
         } else {
-            layer?.backgroundColor = NSColor.clear.cgColor
+            let fillAlpha: CGFloat = isPressing ? 0.13 : isHovering ? 0.075 : 0
+            layer?.backgroundColor = NSColor.white.withAlphaComponent(fillAlpha).cgColor
             textColor = NSColor.labelColor.withAlphaComponent(0.85)
             font = .systemFont(ofSize: 13, weight: .regular)
         }
+
+        let borderColor: NSColor
+        if focused {
+            borderColor = SettingsWindowController.suiteAccentLight
+                .withAlphaComponent(increasedContrast ? 1.0 : 0.90)
+        } else if isSelected {
+            borderColor = SettingsWindowController.suiteAccentLight.withAlphaComponent(0.50)
+        } else if isHovering {
+            borderColor = NSColor.white.withAlphaComponent(0.13)
+        } else {
+            borderColor = .clear
+        }
+        layer?.borderColor = borderColor.cgColor
+        layer?.borderWidth = focused && increasedContrast ? 2 : 1
+        alphaValue = isEnabled ? 1.0 : 0.38
 
         attributedTitle = NSAttributedString(string: itemTitle, attributes: [
             .paragraphStyle: paragraphStyle,

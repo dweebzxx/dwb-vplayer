@@ -44,12 +44,6 @@ enum SettingsDefaultsRegistry {
             }
         }
 
-        enum QueueColumn {
-            static let durationVisible = "com.dwb.queueColumnDurationVisible"
-            static let sizeVisible = "com.dwb.queueColumnSizeVisible"
-            static let durationWidth = "com.dwb.queueColumnDurationWidth"
-            static let sizeWidth = "com.dwb.queueColumnSizeWidth"
-        }
     }
 
     enum Defaults {
@@ -57,8 +51,6 @@ enum SettingsDefaultsRegistry {
         static let imageDurationSeconds = 3
         static let gifLoopCount = 1
         static let chromeAutohideThreshold = 3.0
-        static let queueDurationColumnWidth = 92.0
-        static let queueSizeColumnWidth = 104.0
         static let playerWindowOpacityMin = 0.35
         static let playerWindowOpacityMax = 1.0
         static let playerWindowOpacity = 1.0
@@ -96,11 +88,6 @@ enum SettingsDefaultsRegistry {
         for control in Keys.OptionalTransportControl.allCases {
             defaults[control.defaultsKey] = false
         }
-
-        defaults[Keys.QueueColumn.durationVisible] = true
-        defaults[Keys.QueueColumn.sizeVisible] = true
-        defaults[Keys.QueueColumn.durationWidth] = Defaults.queueDurationColumnWidth
-        defaults[Keys.QueueColumn.sizeWidth] = Defaults.queueSizeColumnWidth
 
         return defaults
     }
